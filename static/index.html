@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kroma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:       #1c1917;
+    --surface:  #292524;
+    --surface-2:#3c3330;
+    --surface-3:#57534e;
+    --gold:     #eab308;
+    --gold-dim: #a16207;
+    --gold-soft:#451a03;
+    --cream:    #fef3c7;
+    --text:     #fafaf9;
+    --text-2:   #d6d3d1;
+    --text-3:   #78716c;
+    --border:   #3c3330;
+    --radius:   10px;
+    --shadow:   0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+    font-size: 15px;
+  }
+
+  /* GRAIN OVERLAY */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.6;
+  }
+
+  /* TOP ACCENT */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    z-index: 9999;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 999px; }
+
+  /* ── SIDEBAR ─────────────────────────────────────────────────────── */
+  .sidebar {
+    width: 268px;
+    min-width: 268px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem 1.1rem 1rem;
+    gap: 0.8rem;
+    overflow-y: auto;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    background: var(--gold);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--bg);
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .sidebar-label {
+    font-size: 0.90rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  /* UPLOAD */
+  .upload-area {
+    background: var(--bg);
+    border: 1.5px dashed var(--surface-2);
+    border-radius: var(--radius);
+    padding: 1.1rem 0.75rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    display: block;
+  }
+
+  .upload-area:hover {
+    border-color: var(--gold-dim);
+    background: #211f1d;
+  }
+
+  .upload-area.dragover {
+    border-color: var(--gold);
+    background: #1a1200;
+  }
+
+  .upload-area input { display: none; }
+
+  .upload-icon {
+    font-size: 1.4rem;
+    display: block;
+    margin-bottom: 0.35rem;
+    filter: grayscale(0.3);
+  }
+
+  .upload-area .upload-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-2);
+    display: block;
+  }
+
+  .upload-area .upload-hint {
+    font-size: 0.75rem;
+    color: var(--text-3);
+    margin-top: 0.2rem;
+    display: block;
+  }
+
+  /* BUTTONS */
+  .btn-primary {
+    background: var(--gold);
+    color: #1a1200;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.65rem 1rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.15s, transform 0.1s;
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: 0.01em;
+  }
+
+  .btn-primary:hover { background: #f59e0b; }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--text-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.6rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    flex: 1;
+    transition: background 0.15s, color 0.15s;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  .btn-secondary:hover { background: var(--surface-3); color: var(--text); }
+
+  .btn-row { display: flex; gap: 0.5rem; }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+
+  /* LIBRARY LIST */
+  .library-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .doc-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: border-color 0.15s;
+  }
+
+  .doc-item:hover { border-color: var(--surface-3); }
+
+  .doc-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .doc-info { flex: 1; min-width: 0; }
+
+  .doc-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-delete {
+    background: none;
+    border: none;
+    color: var(--surface-3);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.3rem;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .btn-delete:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+  .empty-lib {
+    font-size: 0.78rem;
+    color: var(--text-3);
+    padding: 0.25rem 0;
+  }
+
+  /* ── MAIN ────────────────────────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* TOPBAR */
+  .topbar {
+    padding: 1.1rem 2rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .topbar-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .topbar-sub {
+    font-size: 1.1rem;
+    color: var(--text-3);
+    margin-top: 0.2rem;
+  }
+
+  /* METRICS */
+  .metrics {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .metric-card {
+    flex: 1;
+    padding: 0.75rem 1.5rem;
+    border-right: 1px solid var(--border);
+    text-align: center;
+  }
+
+  .metric-card:last-child { border-right: none; }
+
+  .metric-card .label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-3);
+    display: block;
+    margin-bottom: 0.15rem;
+  }
+
+  .metric-card .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* CHAT AREA */
+  .chat-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    margin: auto;
+    max-width: 560px;
+    width: 100%;
+    text-align: center;
+    padding: 1.7rem;
+  }
+
+  .empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    display: block;
+    filter: grayscale(0.2);
+  }
+
+  .empty-state h3 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  .empty-state p {
+    font-size: 1.1rem;
+    color: var(--text-3);
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+  }
+
+  .steps {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 1.1rem;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+
+  .step-num {
+    background: var(--gold);
+    color: #1a1200;
+    border-radius: 999px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  /* MESSAGES */
+  .message {
+    display: flex;
+    gap: 0.75rem;
+    max-width: 760px;
+    width: 100%;
+    align-self: flex-start;
+    animation: fadeUp 0.2s ease;
+  }
+
+  .message.user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    letter-spacing: 0.02em;
+  }
+
+  .avatar.user {
+    background: var(--gold);
+    color: #1a1200;
+  }
+
+  .avatar.ai {
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+  }
+
+  .bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--text-2);
+    max-width: calc(100% - 42px);
+  }
+
+  .bubble h1, .bubble h2, .bubble h3 {
+    color: var(--text);
+    font-weight: 700;
+    margin: 0.75rem 0 0.4rem;
+  }
+
+  .bubble h1 { font-size: 1.2rem; }
+  .bubble h2 { font-size: 1.1rem; }
+  .bubble h3 { font-size: 1rem; }
+
+  .bubble p { margin: 0.4rem 0; }
+
+  .bubble ul, .bubble ol {
+    padding-left: 1.4rem;
+    margin: 0.4rem 0;
+  }
+
+  .bubble li { margin: 0.2rem 0; }
+
+  .bubble code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.4rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--gold);
+  }
+
+  .bubble pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    margin: 0.6rem 0;
+  }
+
+  .bubble pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--text-2);
+  }
+
+  .bubble table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.6rem 0;
+    font-size: 0.9rem;
+  }
+
+  .bubble th {
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+  }
+
+  .bubble td {
+    padding: 0.45rem 0.75rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-2);
+  }
+
+  .bubble tr:hover td { background: var(--surface-2); }
+
+  .bubble strong { color: var(--text); font-weight: 700; }
+  .bubble em { color: var(--text-2); }
+  .bubble blockquote {
+    border-left: 3px solid var(--gold-dim);
+    padding-left: 0.75rem;
+    color: var(--text-3);
+    margin: 0.5rem 0;
+  }
+
+  .message.user .bubble {
+    background: #1c1200;
+    border-color: var(--gold-soft);
+    color: var(--cream);
+    border-radius: 12px 12px 4px 12px;
+  }
+
+  /* SOURCES */
+  .sources {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .source-tag {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.18rem 0.55rem;
+    font-size: 0.7rem;
+    color: var(--text-3);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: -0.01em;
+  }
+
+  /* THINKING */
+  .thinking {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-size: 0.82rem;
+    color: var(--text-3);
+    padding: 0.4rem 0;
+    align-self: flex-start;
+  }
+
+  .dots { display: flex; gap: 4px; align-items: center; }
+
+  .dots span {
+    display: inline-block;
+    width: 5px; height: 5px;
+    background: var(--gold-dim);
+    border-radius: 999px;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse {
+    0%, 60%, 100% { opacity: 0.3; transform: scale(1); }
+    30% { opacity: 1; transform: scale(1.3); }
+  }
+
+  /* INPUT BAR */
+  .input-bar {
+    padding: 0.85rem 2rem 1rem;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-end;
+  }
+
+  .input-bar textarea {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    font-family: 'Outfit', sans-serif;
+    color: var(--text);
+    resize: none;
+    min-height: 46px;
+    max-height: 140px;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+  }
+
+  .input-bar textarea::placeholder { color: var(--text-3); }
+
+  .input-bar textarea:focus {
+    border-color: var(--gold-dim);
+    box-shadow: 0 0 0 2px rgba(234,179,8,0.08);
+  }
+
+  .btn-send {
+    background: var(--gold);
+    color: #1a1200;
+    border: none;
+    border-radius: 10px;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, transform 0.1s;
+    font-weight: 700;
+  }
+
+  .btn-send:hover { background: #f59e0b; }
+  .btn-send:active { transform: scale(0.95); }
+  .btn-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    top: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 0.65rem 1.25rem;
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow: var(--shadow);
+    white-space: nowrap;
+  }
+
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { border-color: #7f1d1d; color: #fca5a5; }
+  .toast.success { border-color: var(--gold-soft); color: var(--gold); }
+
+  @media print {
+    body { background: white !important; color: black !important; }
+    .sidebar, .topbar, .metrics, .input-bar, .toast { display: none !important; }
+    .main { display: block !important; }
+    .chat-wrapper { overflow: visible !important; padding: 1rem !important; }
+    .message { max-width: 100% !important; page-break-inside: avoid; }
+    .bubble {
+      background: white !important;
+      border: 1px solid #ccc !important;
+      color: black !important;
+      margin-bottom: 0.5rem;
+    }
+    .message.user .bubble {
+      background: #f5f5f5 !important;
+      border-color: #999 !important;
+      color: black !important;
+    }
+    .avatar.user { background: #333 !important; color: white !important; }
+    .avatar.ai { background: #eee !important; color: #333 !important; }
+    .thinking { display: none !important; }
+    .bubble pre, .bubble code { background: #f0f0f0 !important; color: #333 !important; }
+    .bubble table { border-collapse: collapse !important; }
+    .bubble th { background: #eee !important; color: black !important; }
+    .bubble td { border-top: 1px solid #ccc !important; color: black !important; }
+
+    .print-header {
+      display: block !important;
+      padding: 1rem 0;
+      border-bottom: 2px solid #333;
+      margin-bottom: 1rem;
+      font-family: sans-serif;
+    }
+  }
+
+ .print-header { display: none; }
+
+  /* SUGGESTED QUESTIONS */
+  .suggestions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .suggestions-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-3);
+    margin-bottom: 0.1rem;
+  }
+
+  .suggestions-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .suggestion-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.82rem;
+    color: var(--text-2);
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    text-align: left;
+    line-height: 1.4;
+  }
+
+  .suggestion-btn:hover {
+    border-color: var(--gold-dim);
+    background: #1c1200;
+    color: var(--cream);
+  }
+
+  /* FLASHCARDS */
+  .flashcard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    padding: 1.25rem 2rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .flashcard {
+    perspective: 1000px;
+    height: 180px;
+    cursor: pointer;
+  }
+
+  .flashcard-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.45s ease;
+  }
+
+  .flashcard.flipped .flashcard-inner {
+    transform: rotateY(180deg);
+  }
+
+  .flashcard-front, .flashcard-back {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .flashcard-front {
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .flashcard-back {
+    background: #1c1200;
+    border: 1px solid var(--gold-soft);
+    transform: rotateY(180deg);
+  }
+
+  .flashcard-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-3);
+    margin-bottom: 0.5rem;
+  }
+
+  .flashcard-back .flashcard-label { color: var(--gold-dim); }
+
+  .flashcard-text {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-2);
+    font-weight: 500;
+  }
+
+  .flashcard-back .flashcard-text { color: var(--cream); }
+
+  /* QUIZ */
+  .quiz-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 860px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .quiz-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 2rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 1rem;
+  }
+
+  .quiz-header span {
+    flex: 1;
+  }
+
+  .quiz-header span { font-size: 0.85rem; color: var(--text-3); flex:1; }
+
+  .quiz-question {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+  }
+
+  .quiz-q-text {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .quiz-q-num {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gold-dim);
+    margin-bottom: 0.4rem;
+  }
+
+  .quiz-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+ .quiz-choice {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+    font-size: 1.2rem;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    text-align: left;
+    font-family: 'Outfit', sans-serif;
+    width: 100%;
+  }
+
+  .quiz-choice:hover { border-color: var(--gold-dim); background: #211f1d; }
+  .quiz-choice.selected { border-color: var(--gold); background: #1c1200; color: var(--cream); }
+  .quiz-choice.correct { border-color: #16a34a; background: #052e16; color: #86efac; }
+  .quiz-choice.wrong { border-color: #dc2626; background: #450a0a; color: #fca5a5; }
+  .quiz-choice.reveal-correct { border-color: #16a34a; background: #052e16; color: #86efac; }
+
+  .quiz-explanation {
+    margin-top: 0.65rem;
+    padding: 0.6rem 0.85rem;
+    background: var(--surface-2);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: var(--text-3);
+    line-height: 1.5;
+    display: none;
+  }
+
+  .quiz-explanation.show { display: block; }
+
+  .quiz-score {
+    background: var(--surface);
+    border: 1px solid var(--gold-soft);
+    border-radius: var(--radius);
+    padding: 2rem;
+    text-align: center;
+    margin: auto;
+    max-width: 400px;
+  }
+
+  .quiz-score-num {
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: var(--gold);
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+
+  .quiz-score-label {
+    font-size: 1rem;
+    color: var(--text-2);
+    margin-bottom: 1.25rem;
+  }
+
+  .quiz-score-msg {
+    font-size: 0.85rem;
+    color: var(--text-3);
+    margin-bottom: 1.5rem;
+  }
+
+  /* HISTORY */
+  .history-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: border-color 0.15s;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  .history-item:hover { border-color: var(--gold-dim); }
+
+  .history-info { flex: 1; min-width: 0; }
+
+  .history-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .history-date {
+    font-size: 0.7rem;
+    color: var(--text-3);
+    margin-top: 0.1rem;
+  }
+  .flashcard-toolbar {
+    padding: 0.75rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+
+  .flashcard-toolbar span {
+    font-size: 0.85rem;
+    color: var(--text-3);
+  }
+
+  /* CONFIRM DIALOG */
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .confirm-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .confirm-msg {
+    font-size: 0.95rem;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+
+  .confirm-btns {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+
+  <a href="/" style="text-decoration:none;" class="logo" style="padding:0.25rem 0;">
+    <svg width="100%" height="80" viewBox="140 55 400 120" role="img">
+      <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" stroke-width="2"/>
+      <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" stroke-width="1"/>
+      <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" stroke-width="1"/>
+      <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
+      <path d="M195 109 L209 94" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <path d="M195 109 L211 126" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+      <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+      <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+      <text x="262" y="122" font-family="'Outfit', sans-serif" font-size="58" font-weight="800" fill="#fafaf9" letter-spacing="-2">Kroma</text>
+      <circle cx="270" cy="72" r="5" fill="#eab308"/>
+      <text x="265" y="152" font-family="'DM Mono', monospace" font-size="13" font-weight="500" fill="#eab308" letter-spacing="4">ASK. LEARN. KNOW.</text>
+    </svg>
+  </a>
+
+  <div class="sidebar-label">Upload</div>
+
+  <label class="upload-area" id="uploadArea">
+    <input type="file" id="fileInput" accept=".pdf" multiple>
+    <span class="upload-icon">📄</span>
+    <span class="upload-title">Click or drag to upload</span>
+    <span class="upload-hint">PDF files only · 200MB max</span>
+  </label>
+
+  <button class="btn-primary" id="processBtn" onclick="processDocuments()">
+    Process Documents
+  </button>
+
+  <hr class="divider">
+
+  <div class="sidebar-label">Library</div>
+  <div class="library-list" id="libraryList">
+    <span class="empty-lib">No documents yet.</span>
+  </div>
+
+  <hr class="divider">
+
+  <div class="btn-row">
+    <button class="btn-secondary" onclick="clearLibrary()">Clear all</button>
+    <button class="btn-secondary" onclick="newChat()">New chat</button>
+  </div>
+
+  <hr class="divider">
+  <div class="sidebar-label">Tools</div>
+  <button class="btn-primary" id="flashcardBtn" onclick="generateFlashcards()">
+    ⚡ Flashcards
+  </button>
+  <button class="btn-primary" id="quizBtn" onclick="generateQuiz()" style="background:var(--surface-2);color:var(--text-2);margin-top:-0.3rem;">
+    🧠 Quiz me
+  </button>
+  <button class="btn-primary" id="summaryBtn" onclick="generateSummary()" style="background:var(--surface-2);color:var(--text-2);margin-top:-0.3rem;">
+    📋 Summarize
+  </button>
+
+  <hr class="divider">
+  <div class="sidebar-label" style="display:flex;align-items:center;justify-content:space-between;">
+    <span>History</span>
+    <button onclick="clearHistory()" style="background:none;border:none;color:var(--text-3);font-size:0.7rem;cursor:pointer;font-family:'Outfit',sans-serif;">Clear</button>
+  </div>
+  <div class="library-list" id="historyList">
+    <span class="empty-lib">No saved chats yet.</span>
+  </div>
+
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbarTitle">Kroma</div>
+      <div class="topbar-sub" id="topbarSub">Your AI-powered document assistant</div>
+    </div>
+    <button class="btn-secondary" id="exportBtn" onclick="exportChatPDF()" style="width:auto;padding:0.5rem 1.25rem;display:none;flex-shrink:0;white-space:nowrap;max-width:140px;">
+      ↓ Export PDF
+    </button>
+  </div>
+
+  <div class="metrics" id="metrics" style="display:none">
+    <div class="metric-card">
+      <span class="label">Documents</span>
+      <span class="value" id="metDocs">0</span>
+    </div>
+    <div class="metric-card">
+      <span class="label">Pages</span>
+      <span class="value" id="metPages">0</span>
+    </div>
+    <div class="metric-card">
+      <span class="label">Chunks</span>
+      <span class="value" id="metChunks">0</span>
+    </div>
+  </div>
+
+  <div class="suggestions" id="suggestionsBar" style="display:none;">
+    <div class="suggestions-label">Suggested questions</div>
+    <div class="suggestions-row" id="suggestionsRow"></div>
+  </div>
+
+  <div class="chat-wrapper" id="chatWrapper">
+  </div>
+
+  <div class="input-bar">
+    <textarea
+      id="chatInput"
+      placeholder="Ask anything about your documents..."
+      rows="1"
+      onkeydown="handleKey(event)"
+      oninput="autoResize(this)"
+    ></textarea>
+    <button class="btn-send" id="sendBtn" onclick="sendMessage()">↑</button>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let chatHistory = [];
+  let isIndexed = false;
+
+  async function init() {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      isIndexed = data.indexed;
+      if (data.stats) updateMetrics(data.stats);
+      renderLibrary(data.docs || []);
+      if (isIndexed) {
+        const es = document.getElementById('emptyState');
+        if (es) es.style.display = 'none';
+        document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
+      } else {
+        const wrapper = document.getElementById('chatWrapper');
+        wrapper.innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <span class="empty-icon">🗂️</span>
+            <h3>Ask your documents anything</h3>
+            <p>Upload PDFs, process them, then ask questions. Answers come only from your files — no guessing.</p>
+            <div class="steps">
+              <div class="step"><span class="step-num">1</span><span>Upload a PDF from your computer</span></div>
+              <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong> to prepare your files</span></div>
+              <div class="step"><span class="step-num">3</span><span>Ask any question and get answers from your documents</span></div>
+            </div>
+          </div>`;
+      }
+    } catch(e) {}
+  }
+
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.getElementById('uploadArea');
+
+  fileInput.addEventListener('change', async () => {
+    for (const file of fileInput.files) await uploadFile(file);
+    fileInput.value = '';
+    await init();
+  });
+
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+  uploadArea.addEventListener('drop', async e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    for (const file of e.dataTransfer.files) {
+      if (file.name.endsWith('.pdf')) await uploadFile(file);
+    }
+    await init();
+  });
+
+  async function uploadFile(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    if (res.ok) showToast(`Uploaded: ${file.name}`, 'success');
+    else showToast(`Failed: ${file.name}`, 'error');
+  }
+
+  async function processDocuments() {
+    const btn = document.getElementById('processBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+    try {
+      const res = await fetch('/api/process', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        isIndexed = true;
+        updateMetrics(data.stats);
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
+        showToast('Ready — ask your first question', 'success');
+        await init();
+        fetchSuggestions();
+      } else {
+        showToast(data.detail || 'Processing failed', 'error');
+      }
+    } catch(e) { showToast('Processing failed', 'error'); }
+    btn.disabled = false;
+    btn.textContent = 'Process Documents';
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const question = input.value.trim();
+    if (!question) return;
+    if (!isIndexed) { showToast('Process documents first', 'error'); return; }
+
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    input.value = '';
+    autoResize(input);
+    appendMessage('user', question);
+    chatHistory.push({ role: 'user', content: question });
+
+    const thinking = appendThinking();
+    document.getElementById('sendBtn').disabled = true;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, history: chatHistory.slice(-16), selected_docs: selected })
+      });
+      const data = await res.json();
+      thinking.remove();
+      appendMessage('ai', data.answer, []);
+      chatHistory.push({ role: 'assistant', content: data.answer });
+    document.getElementById('exportBtn').style.display = 'block';
+    } catch(e) {
+      thinking.remove();
+      appendMessage('ai', 'Something went wrong. Please try again.');
+    }
+    document.getElementById('sendBtn').disabled = false;
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  function appendMessage(role, text, sources = []) {
+    const wrapper = document.getElementById('chatWrapper');
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.style.display = 'none';
+
+    const msg = document.createElement('div');
+    msg.className = `message ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = `avatar ${role}`;
+    avatar.textContent = role === 'user' ? 'YOU' : 'K';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = marked.parse(text);
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    wrapper.appendChild(msg);
+    wrapper.scrollTop = wrapper.scrollHeight;
+    return msg;
+  }
+
+  function appendThinking() {
+    const wrapper = document.getElementById('chatWrapper');
+    const div = document.createElement('div');
+    div.className = 'thinking';
+    div.innerHTML = `<div class="dots"><span></span><span></span><span></span></div><span>Searching documents…</span>`;
+    wrapper.appendChild(div);
+    wrapper.scrollTop = wrapper.scrollHeight;
+    return div;
+  }
+
+  function updateMetrics(stats) {
+    if (!stats) return;
+    document.getElementById('metrics').style.display = 'flex';
+    document.getElementById('metDocs').textContent = (stats.docs || []).length;
+    document.getElementById('metPages').textContent = stats.total_pages || 0;
+    document.getElementById('metChunks').textContent = stats.total_chunks || 0;
+  }
+
+  function renderLibrary(docs) {
+    const list = document.getElementById('libraryList');
+    list.innerHTML = '';
+    if (!docs.length) {
+      list.innerHTML = '<span class="empty-lib">No documents yet.</span>';
+      return;
+    }
+    docs.forEach(name => {
+      const item = document.createElement('div');
+      item.className = 'doc-item';
+      item.innerHTML = `
+        <input type="checkbox" class="doc-check" data-name="${name}" checked style="accent-color:var(--gold);cursor:pointer;flex-shrink:0;">
+        <span class="doc-icon">📄</span>
+        <div class="doc-info">
+          <div class="doc-name" title="${name}">${name}</div>
+        </div>
+        <button class="btn-delete" onclick="deleteDoc('${name.replace(/'/g, "\\'")}')" title="Remove">✕</button>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  async function deleteDoc(name) {
+    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res.ok) { showToast(`Removed: ${name}`, 'success'); await init(); }
+    else showToast('Could not remove file', 'error');
+  }
+
+  async function clearLibrary() {
+    showConfirm('Remove all documents and reset the library?', async () => {
+      await fetch('/api/library', { method: 'DELETE' });
+      chatHistory = [];
+      isIndexed = false;
+      document.getElementById('metrics').style.display = 'none';
+      document.getElementById('suggestionsBar').style.display = 'none';
+      document.getElementById('exportBtn').style.display = 'none';
+      document.getElementById('topbarSub').textContent = 'Your AI-powered document assistant';
+      renderLibrary([]);
+      const wrapper = document.getElementById('chatWrapper');
+      wrapper.innerHTML = '';
+      showToast('Library cleared', 'success');
+      await init();
+    });
+  }
+  function exportChatPDF() {
+    if (chatHistory.length === 0) { showToast('No chat to export', 'error'); return; }
+
+    const wrapper = document.getElementById('chatWrapper');
+
+    const header = document.createElement('div');
+    header.className = 'print-header';
+    header.innerHTML = `
+      <strong style="font-size:1.2rem;">Kroma — Chat Export</strong><br>
+      <span style="font-size:0.85rem;color:#666;">${new Date().toLocaleString()}</span>
+    `;
+    wrapper.insertBefore(header, wrapper.firstChild);
+
+    window.print();
+
+    wrapper.removeChild(header);
+    showToast('PDF export opened', 'success');
+  }
+
+  function backToChat() {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = '';
+    wrapper.innerHTML = '';
+    showToast('Back to chat', 'success');
+  }
+
+  function newChat() {
+    saveCurrentChat();
+    chatHistory = [];
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('suggestionsBar').style.display = 'none';
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    if (!isIndexed) {
+      wrapper.innerHTML = `
+        <div class="empty-state" id="emptyState">
+          <span class="empty-icon">🗂️</span>
+          <h3>Ask your documents anything</h3>
+          <p>Upload PDFs, process them, then ask questions.</p>
+          <div class="steps">
+            <div class="step"><span class="step-num">1</span><span>Upload a PDF</span></div>
+            <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
+          </div>
+        </div>`;
+    }
+    showToast('New chat started', 'success');
+  }
+
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  let quizData = [];
+  let quizAnswers = {};
+
+  async function generateQuiz(difficulty = null, count = null) {
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    if (!difficulty || !count) {
+      showQuizSettings();
+      return;
+    }
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('quizBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await fetch('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected, difficulty, count })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
+      quizData = data.questions;
+      quizAnswers = {};
+      showQuiz(quizData, difficulty);
+      showToast('Quiz ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🧠 Quiz me';
+  }
+
+  function showQuizSettings() {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
+
+    wrapper.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;width:100%;max-width:420px;display:flex;flex-direction:column;gap:1.25rem;">
+        <div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">Quiz Settings</div>
+          <div style="font-size:0.9rem;color:var(--text-3);">Customize your quiz before starting</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Difficulty</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="quiz-setting-btn active" data-group="diff" data-val="easy" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Easy</button>
+            <button class="quiz-setting-btn" data-group="diff" data-val="medium" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Medium</button>
+            <button class="quiz-setting-btn" data-group="diff" data-val="hard" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Hard</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Number of Questions</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="quiz-setting-btn" data-group="count" data-val="5" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">5</button>
+            <button class="quiz-setting-btn active" data-group="count" data-val="8" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">8</button>
+            <button class="quiz-setting-btn" data-group="count" data-val="10" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">10</button>
+            <button class="quiz-setting-btn" data-group="count" data-val="15" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">15</button>
+          </div>
+          <input id="quizCustomCount" type="number" min="3" max="30" placeholder="Or enter custom number (3–30)" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem 1rem;color:var(--text);font-size:1rem;font-family:'Outfit',sans-serif;outline:none;width:100%;margin-top:0.4rem;">
+        </div>
+
+        <button class="btn-primary" onclick="startQuizWithSettings()" style="margin-top:0.5rem;">Start Quiz</button>
+        <button class="btn-secondary" onclick="backToChat()" style="margin-top:-0.5rem;">← Cancel</button>
+      </div>
+    `;
+  }
+
+  function selectSetting(btn, group) {
+    document.querySelectorAll(`[data-group="${group}"]`).forEach(b => {
+      b.style.border = '1px solid var(--border)';
+      b.style.background = 'var(--bg)';
+      b.style.color = 'var(--text-2)';
+    });
+    btn.style.border = '1px solid var(--gold)';
+    btn.style.background = '#1c1200';
+    btn.style.color = 'var(--gold)';
+  }
+
+  function startQuizWithSettings() {
+    const diffBtn = [...document.querySelectorAll('[data-group="diff"]')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const difficulty = diffBtn?.dataset.val || 'medium';
+    const custom = document.getElementById('quizCustomCount')?.value;
+    if (custom && parseInt(custom) >= 3) {
+      generateQuiz(difficulty, parseInt(custom));
+      return;
+    }
+    const countBtn = [...document.querySelectorAll('[data-group="count"]')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const count = parseInt(countBtn?.dataset.val || '8');
+    generateQuiz(difficulty, count);
+  }
+
+  function showQuiz(questions, difficulty = 'medium') {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'quiz-header';
+    header.innerHTML = `
+      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex-shrink:0;">← Back to chat</button>
+      <span style="text-align:right;">${questions.length} questions · Select your answers then submit</span>
+    `;
+    wrapper.appendChild(header);
+
+    const qWrapper = document.createElement('div');
+    qWrapper.className = 'quiz-wrapper';
+    qWrapper.id = 'quizWrapper';
+
+    questions.forEach((q, i) => {
+      const qDiv = document.createElement('div');
+      qDiv.className = 'quiz-question';
+      qDiv.id = `q-${i}`;
+
+      const choicesHTML = q.choices.map(c => {
+        const letter = c.charAt(0);
+        return `<button class="quiz-choice" data-q="${i}" data-letter="${letter}" onclick="selectAnswer(${i}, '${letter}', this)">${c}</button>`;
+      }).join('');
+
+      qDiv.innerHTML = `
+        <div class="quiz-q-num">Question ${i + 1} of ${questions.length}</div>
+        <div class="quiz-q-text">${q.question}</div>
+        <div class="quiz-choices">${choicesHTML}</div>
+        <div class="quiz-explanation" id="exp-${i}">💡 ${q.explanation}</div>
+      `;
+      qWrapper.appendChild(qDiv);
+    });
+
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'btn-primary';
+    submitBtn.id = 'submitQuizBtn';
+    submitBtn.textContent = 'Submit Quiz';
+    submitBtn.style.cssText = 'margin: 0 2rem 1.5rem; width: calc(100% - 4rem);';
+    submitBtn.onclick = submitQuiz;
+    qWrapper.appendChild(submitBtn);
+
+    wrapper.appendChild(qWrapper);
+  }
+
+  function selectAnswer(qIndex, letter, btn) {
+    const choices = document.querySelectorAll(`[data-q="${qIndex}"]`);
+    choices.forEach(c => c.classList.remove('selected'));
+    btn.classList.add('selected');
+    quizAnswers[qIndex] = letter;
+  }
+
+  function submitQuiz() {
+    const unanswered = quizData.filter((_, i) => !quizAnswers[i]);
+    if (unanswered.length > 0) {
+      showToast(`Answer all ${quizData.length} questions first`, 'error');
+      return;
+    }
+
+    let score = 0;
+    quizData.forEach((q, i) => {
+      const correct = q.answer.trim().charAt(0).toUpperCase();
+      const selected = quizAnswers[i];
+      const choices = document.querySelectorAll(`[data-q="${i}"]`);
+
+      choices.forEach(c => {
+        c.disabled = true;
+        if (c.dataset.letter === correct) c.classList.add('reveal-correct');
+        if (c.dataset.letter === selected && selected !== correct) c.classList.add('wrong');
+      });
+
+      document.getElementById(`exp-${i}`).classList.add('show');
+      if (selected === correct) score++;
+    });
+
+    document.getElementById('submitQuizBtn').remove();
+
+    const msg = score === quizData.length ? 'Perfect score! 🎉' :
+                score >= quizData.length * 0.7 ? 'Great job! 💪' :
+                score >= quizData.length * 0.5 ? 'Keep studying! 📚' : 'Review the material and try again 🔄';
+
+    const scoreDiv = document.createElement('div');
+    scoreDiv.className = 'quiz-score';
+    scoreDiv.innerHTML = `
+      <div class="quiz-score-num">${score}/${quizData.length}</div>
+      <div class="quiz-score-label">Your Score</div>
+      <div class="quiz-score-msg">${msg}</div>
+      <button class="btn-primary" onclick="generateQuiz()" style="width:auto;padding:0.6rem 1.5rem;">Try Again</button>
+    `;
+    document.getElementById('quizWrapper').appendChild(scoreDiv);
+    scoreDiv.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // ── HISTORY ──────────────────────────────────────────────────────────
+  const HISTORY_KEY = 'kroma_chat_history';
+
+  function saveCurrentChat() {
+    if (chatHistory.length === 0) return;
+    const saved = getSavedChats();
+    const title = chatHistory[0]?.content?.slice(0, 50) || 'Untitled chat';
+    const entry = {
+      id: Date.now(),
+      title,
+      date: new Date().toLocaleDateString(),
+      messages: [...chatHistory]
+    };
+    saved.unshift(entry);
+    const trimmed = saved.slice(0, 20);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    renderHistory();
+  }
+
+  function getSavedChats() {
+    try {
+      return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    } catch { return []; }
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    const saved = getSavedChats();
+    list.innerHTML = '';
+    if (!saved.length) {
+      list.innerHTML = '<span class="empty-lib">No saved chats yet.</span>';
+      return;
+    }
+    saved.forEach(entry => {
+      const item = document.createElement('button');
+      item.className = 'history-item';
+      item.innerHTML = `
+        <div class="history-info">
+          <div class="history-title" title="${entry.title}">${entry.title}</div>
+          <div class="history-date">${entry.date}</div>
+        </div>
+      `;
+      item.onclick = () => loadChat(entry);
+      list.appendChild(item);
+    });
+  }
+
+  function loadChat(entry) {
+    chatHistory = [...entry.messages];
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    entry.messages.forEach(msg => {
+      if (msg.role === 'user') appendMessage('user', msg.content);
+      else if (msg.role === 'assistant') appendMessage('ai', msg.content);
+    });
+    showToast('Chat loaded', 'success');
+  }
+
+  function clearHistory() {
+    showConfirm('Clear all chat history?', () => {
+      localStorage.removeItem(HISTORY_KEY);
+      renderHistory();
+      showToast('History cleared', 'success');
+    });
+  }
+
+  async function generateFlashcards(count = null) {
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    if (!count) { showFlashcardSettings(); return; }
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('flashcardBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await fetch('/api/flashcards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected, count })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
+      showFlashcards(data.flashcards);
+      showToast('Flashcards ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '⚡ Flashcards';
+  }
+
+  function showFlashcardSettings() {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
+    wrapper.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;width:100%;max-width:420px;display:flex;flex-direction:column;gap:1.25rem;">
+        <div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">Flashcard Settings</div>
+          <div style="font-size:0.90rem;color:var(--text-3);">Choose how many flashcards to generate</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Number of Cards</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="fc-setting-btn" data-val="5" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">5</button>
+            <button class="fc-setting-btn" data-val="8" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">8</button>
+            <button class="fc-setting-btn" data-val="10" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">10</button>
+            <button class="fc-setting-btn" data-val="15" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">15</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Or enter a custom number</label>
+          <input id="fcCustomCount" type="number" min="3" max="30" placeholder="e.g. 12" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem 1rem;color:var(--text);font-size:1rem;font-family:'Outfit',sans-serif;outline:none;width:100%;">
+        </div>
+
+        <button class="btn-primary" onclick="startFlashcardsWithSettings()">Generate Flashcards</button>
+        <button class="btn-secondary" onclick="backToChat()" style="margin-top:-0.5rem;">← Cancel</button>
+      </div>
+    `;
+  }
+
+  function selectFcSetting(btn) {
+    document.querySelectorAll('.fc-setting-btn').forEach(b => {
+      b.style.border = '1px solid var(--border)';
+      b.style.background = 'var(--bg)';
+      b.style.color = 'var(--text-2)';
+    });
+    btn.style.border = '1px solid var(--gold)';
+    btn.style.background = '#1c1200';
+    btn.style.color = 'var(--gold)';
+    document.getElementById('fcCustomCount').value = '';
+  }
+
+  function startFlashcardsWithSettings() {
+    const custom = document.getElementById('fcCustomCount')?.value;
+    if (custom && parseInt(custom) >= 3) {
+      generateFlashcards(parseInt(custom));
+      return;
+    }
+    const selected = [...document.querySelectorAll('.fc-setting-btn')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const count = parseInt(selected?.dataset.val || '8');
+    generateFlashcards(count);
+  }
+
+  let flashcardIndex = 0;
+  let flashcardData = [];
+
+  function showFlashcards(cards) {
+    flashcardData = cards;
+    flashcardIndex = 0;
+
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    wrapper.style.padding = '0';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.style.gap = '1.5rem';
+
+    const nav = document.createElement('div');
+    nav.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:100%;max-width:680px;padding:0 1rem;';
+    nav.innerHTML = `
+      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex:none;">← Back to chat</button>
+      <span id="fcCounter" style="font-size:0.85rem;color:var(--text-3);">1 / ${cards.length}</span>
+      <span style="font-size:0.75rem;color:var(--text-3);">Click card to flip</span>
+    `;
+    wrapper.appendChild(nav);
+
+    const cardContainer = document.createElement('div');
+    cardContainer.id = 'fcContainer';
+    cardContainer.style.cssText = 'width:100%;max-width:680px;padding:0 1rem;';
+    wrapper.appendChild(cardContainer);
+
+    const arrows = document.createElement('div');
+    arrows.style.cssText = 'display:flex;gap:1rem;align-items:center;';
+    arrows.innerHTML = `
+      <button class="btn-secondary" onclick="prevCard()" style="width:44px;height:44px;font-size:1.1rem;flex:none;">←</button>
+      <button class="btn-secondary" onclick="nextCard()" style="width:44px;height:44px;font-size:1.1rem;flex:none;">→</button>
+    `;
+    wrapper.appendChild(arrows);
+
+    renderCard();
+  }
+
+  function renderCard() {
+    const container = document.getElementById('fcContainer');
+    const card = flashcardData[flashcardIndex];
+    container.innerHTML = `
+      <div class="flashcard" id="currentCard" style="height:300px;max-width:680px;width:100%;">
+        <div class="flashcard-inner">
+          <div class="flashcard-front">
+            <div class="flashcard-label" style="font-size:1.2rem;">Question ${flashcardIndex + 1} of ${flashcardData.length}</div>
+            <div class="flashcard-text" style="font-size:1.25rem;">${card.question}</div>
+          </div>
+          <div class="flashcard-back">
+            <div class="flashcard-label">Answer</div>
+            <div class="flashcard-text" style="font-size:1.15rem;">${card.answer}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('currentCard').addEventListener('click', () => {
+      document.getElementById('currentCard').classList.toggle('flipped');
+    });
+    document.getElementById('fcCounter').textContent = `${flashcardIndex + 1} / ${flashcardData.length}`;
+  }
+
+  function nextCard() {
+    if (flashcardIndex < flashcardData.length - 1) {
+      flashcardIndex++;
+      renderCard();
+    }
+  }
+
+  function prevCard() {
+    if (flashcardIndex > 0) {
+      flashcardIndex--;
+      renderCard();
+    }
+  }
+
+  async function generateSummary() {
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('summaryBtn');
+    btn.disabled = true;
+    btn.textContent = 'Summarizing…';
+
+    try {
+      const res = await fetch('/api/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to summarize', 'error'); return; }
+      showSummary(data.summary);
+      showToast('Summary ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '📋 Summarize';
+  }
+
+  function showSummary(text) {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = '';
+    wrapper.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+    header.innerHTML = `
+      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex:none;white-space:nowrap;">← Back to chat</button>
+      <span style="font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;">Document Summary</span>
+    `;
+    wrapper.appendChild(header);
+
+    const content = document.createElement('div');
+    content.style.cssText = 'flex:1;overflow-y:auto;padding:1.5rem 2rem;max-width:760px;margin:0 auto;width:100%;';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.style.cssText = 'max-width:100%;';
+    bubble.innerHTML = marked.parse(text);
+
+    content.appendChild(bubble);
+    wrapper.appendChild(content);
+  }
+
+  async function fetchSuggestions() {
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) return;
+    try {
+      const res = await fetch('/api/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.questions?.length) return;
+      renderSuggestions(data.questions);
+    } catch(e) {}
+  }
+
+  function renderSuggestions(questions) {
+    const bar = document.getElementById('suggestionsBar');
+    const row = document.getElementById('suggestionsRow');
+    row.innerHTML = '';
+    questions.forEach(q => {
+      const btn = document.createElement('button');
+      btn.className = 'suggestion-btn';
+      btn.textContent = q;
+      btn.onclick = () => {
+        document.getElementById('chatInput').value = q;
+        bar.style.display = 'none';
+        sendMessage();
+      };
+      row.appendChild(btn);
+    });
+    bar.style.display = 'flex';
+    bar.style.flexDirection = 'column';
+  }
+
+  function showConfirm(message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <div class="confirm-msg">${message}</div>
+        <div class="confirm-btns">
+          <button class="btn-secondary" id="confirmCancel" style="width:auto;padding:0.5rem 1rem;">Cancel</button>
+          <button class="btn-primary" id="confirmOk" style="width:auto;padding:0.5rem 1rem;background:#dc2626;color:white;">Confirm</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    document.getElementById('confirmCancel').onclick = () => overlay.remove();
+    document.getElementById('confirmOk').onclick = () => { overlay.remove(); onConfirm(); };
+  }
+
+  renderHistory();
+  init();
+</script>
+</body>
+</html>

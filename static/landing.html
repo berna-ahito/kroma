@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kroma — Ask. Learn. Know.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0f0e0c;
+    --bg2: #1c1917;
+    --surface: #292524;
+    --surface2: #3c3330;
+    --gold: #eab308;
+    --gold-dim: #a16207;
+    --gold-soft: #451a03;
+    --cream: #fef3c7;
+    --text: #fafaf9;
+    --text2: #d6d3d1;
+    --text3: #78716c;
+    --border: #3c3330;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* GRAIN */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.5;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 1.25rem 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(15,14,12,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(60,51,48,0.5);
+  }
+
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    text-decoration: none;
+  }
+
+  .nav-mark {
+    width: 32px;
+    height: 32px;
+    background: var(--gold);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--bg);
+  }
+
+  .nav-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--text3);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-cta {
+    background: var(--gold);
+    color: var(--bg) !important;
+    padding: 0.5rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 700 !important;
+    font-size: 0.875rem !important;
+    transition: background 0.15s !important;
+  }
+
+  .nav-cta:hover { background: #f59e0b !important; color: var(--bg) !important; }
+
+  /* TOP LINE */
+  .top-line {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    z-index: 101;
+  }
+
+ /* HERO */
+  .hero-wrapper {
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 6rem;
+    padding: 8rem 1.5rem 4rem;
+    position: relative;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(234,179,8,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--gold);
+    letter-spacing: 0.05em;
+    margin-bottom: 2rem;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  .hero-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse-dot 2s infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 4.5vw, 3.8rem);
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 1.5rem;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  .hero-title span {
+    color: var(--gold);
+    font-style: italic;
+  }
+
+  .hero-sub {
+    font-size: clamp(1rem, 2vw, 1.25rem);
+    color: var(--text3);
+    max-width: 560px;
+    line-height: 1.7;
+    margin-bottom: 3rem;
+    animation: fadeUp 0.6s 0.2s ease both;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    animation: fadeUp 0.6s 0.3s ease both;
+  }
+
+  .btn-hero {
+    background: var(--gold);
+    color: var(--bg);
+    border: none;
+    border-radius: 10px;
+    padding: 0.85rem 2rem;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.1s;
+    display: inline-block;
+  }
+
+  .btn-hero:hover { background: #f59e0b; transform: translateY(-1px); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.85rem 2rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    text-decoration: none;
+    transition: border-color 0.15s, color 0.15s;
+    display: inline-block;
+  }
+
+  .btn-ghost:hover { border-color: var(--text3); color: var(--text); }
+
+  .hero-tagline {
+    margin-top: 4rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    color: var(--text3);
+    animation: fadeUp 0.6s 0.4s ease both;
+  }
+
+  .hero-tagline span { color: var(--gold); }
+
+ /* HERO SPLIT */
+  .hero-left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .hero-left .hero-title,
+  .hero-left .hero-sub,
+  .hero-left .hero-tagline {
+    text-align: left;
+  }
+
+  .hero-left .hero-actions {
+    justify-content: flex-start;
+  }
+
+  .hero-right {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 1000px;
+  }
+
+  /* APP PREVIEW */
+  .preview-frame {
+    width: 100%;
+    background: var(--bg2);
+    border: 1px solid rgba(234,179,8,0.2);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 
+      -30px 30px 80px rgba(0,0,0,0.7),
+      -10px 10px 30px rgba(234,179,8,0.06),
+      inset 0 1px 0 rgba(255,255,255,0.07);
+    transform: rotateY(-15deg) rotateX(5deg) translateY(-10px);
+    transition: transform 0.5s ease, box-shadow 0.5s ease;
+    animation: float 4s ease-in-out infinite;
+  }
+
+  .preview-frame:hover {
+    transform: rotateY(-5deg) rotateX(2deg) translateY(-14px);
+    box-shadow: 
+      -15px 40px 80px rgba(0,0,0,0.5),
+      0 0 0 1px rgba(234,179,8,0.25);
+    animation-play-state: paused;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: rotateY(-15deg) rotateX(5deg) translateY(-10px); }
+    50% { transform: rotateY(-15deg) rotateX(5deg) translateY(-18px); }
+  }
+
+  .preview-bar {
+    background: var(--surface);
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .preview-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .preview-url {
+    flex: 1;
+    background: var(--bg2);
+    border-radius: 6px;
+    padding: 0.3rem 0.75rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text3);
+    margin: 0 0.5rem;
+  }
+
+  .preview-screen {
+    padding: 2rem;
+    min-height: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .preview-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .preview-metric {
+    background: var(--bg2);
+    padding: 0.75rem 1rem;
+    text-align: center;
+  }
+
+  .preview-metric-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    font-weight: 600;
+  }
+
+  .preview-metric-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin-top: 0.2rem;
+  }
+
+  .preview-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .preview-msg {
+    max-width: 80%;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .preview-msg.user {
+    align-self: flex-end;
+    background: #1c1200;
+    border: 1px solid var(--gold-soft);
+    color: var(--cream);
+  }
+
+  .preview-msg.ai {
+    align-self: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text2);
+  }
+
+  .preview-msg-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.3rem;
+    opacity: 0.6;
+  }
+
+  /* FEATURES */
+  .section {
+    padding: 6rem 4rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.95rem;
+    letter-spacing: 0.2em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 1rem;
+    line-height: 1.2;
+  }
+
+  .section-sub {
+    font-size: 1.1rem;
+    color: var(--text3);
+    max-width: 500px;
+    line-height: 1.7;
+    margin-bottom: 3rem;
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .feature-card {
+    background: var(--bg2);
+    padding: 2rem;
+    transition: background 0.2s;
+  }
+
+  .feature-card:hover { background: var(--surface); }
+
+  .feature-icon {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    display: block;
+  }
+
+  .feature-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+  }
+
+  .feature-desc {
+    font-size: 0.95rem;
+    color: var(--text3);
+    line-height: 1.6;
+  }
+
+  /* TECH STACK */
+  .stack-section {
+    padding: 6rem 4rem;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stack-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .stack-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  .stack-pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.5rem 1.1rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .stack-pill:hover { border-color: var(--gold-dim); color: var(--text); }
+
+  .stack-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    flex-shrink: 0;
+  }
+
+  /* BUILT BY */
+  .built-section {
+    padding: 6rem 4rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+  }
+
+  .built-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem;
+  }
+
+  .built-avatar {
+    width: 64px;
+    height: 64px;
+    background: var(--gold);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--bg);
+    margin-bottom: 1.5rem;
+  }
+
+  .built-name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+  }
+
+  .built-role {
+    font-size: 0.95rem;
+    color: var(--gold);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 1rem;
+  }
+
+  .built-bio {
+    font-size: 1rem;
+    color: var(--text3);
+    line-height: 1.7;
+  }
+
+  .built-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .built-tag {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* FOOTER */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .footer-left {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text3);
+  }
+
+  .footer-left span { color: var(--gold); }
+
+  .footer-right {
+    font-size: 0.78rem;
+    color: var(--text3);
+  }
+
+  /* ANIMATIONS */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* DIVIDER */
+  .gold-divider {
+    width: 48px;
+    height: 2px;
+    background: var(--gold);
+    margin-bottom: 2rem;
+    border-radius: 999px;
+  }
+</style>
+</head>
+<body>
+
+<div class="top-line"></div>
+
+<nav>
+  <a href="#" class="nav-logo">
+    <svg width="200" height="60" viewBox="140 55 400 120" role="img">
+      <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" stroke-width="2"/>
+      <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" stroke-width="1"/>
+      <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" stroke-width="1"/>
+      <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
+      <path d="M195 109 L209 94" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <path d="M195 109 L211 126" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+      <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+      <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+      <text x="262" y="122" font-family="'Outfit', sans-serif" font-size="58" font-weight="800" fill="#fafaf9" letter-spacing="-2">Kroma</text>
+      <circle cx="270" cy="72" r="5" fill="#eab308"/>
+      <text x="265" y="152" font-family="'DM Mono', monospace" font-size="20" font-weight="500" fill="#eab308" letter-spacing="4">ASK. LEARN. KNOW.</text>
+    </svg>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#stack">Tech Stack</a></li>
+    <li><a href="/app" class="nav-cta">Open App →</a></li>
+  </ul>
+</nav>
+
+<div class="hero-wrapper">
+<section class="hero">
+  <div class="hero-glow"></div>
+
+  <div class="hero-left">
+
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    AI that reads your documents, not the internet
+  </div>
+
+  <h1 class="hero-title">
+    Your documents.<br>
+    <span>Instant answers.</span>
+  </h1>
+
+  <p class="hero-sub">
+    Kroma turns your PDFs into an intelligent knowledge base. Ask questions, generate flashcards, quiz yourself — all from your own files.
+  </p>
+
+  <div class="hero-actions">
+    <a href="/app" class="btn-hero">Try Kroma →</a>
+    <a href="#features" class="btn-ghost">See features</a>
+  </div>
+
+  <p class="hero-tagline">
+    <span>ASK.</span> LEARN. <span>KNOW.</span>
+  </p>
+
+  </div><!-- end hero-left -->
+
+  <div class="hero-right">
+    <div class="preview-frame">
+      <div class="preview-bar">
+        <div class="preview-dot" style="background:#ef4444"></div>
+        <div class="preview-dot" style="background:#f59e0b"></div>
+        <div class="preview-dot" style="background:#22c55e"></div>
+        <div class="preview-url">localhost:8000 — Kroma</div>
+      </div>
+      <div class="preview-screen">
+        <div class="preview-metrics">
+          <div class="preview-metric">
+            <div class="preview-metric-label">Documents</div>
+            <div class="preview-metric-val">3</div>
+          </div>
+          <div class="preview-metric">
+            <div class="preview-metric-label">Pages</div>
+            <div class="preview-metric-val">52</div>
+          </div>
+          <div class="preview-metric">
+            <div class="preview-metric-label">Chunks</div>
+            <div class="preview-metric-val">92</div>
+          </div>
+        </div>
+        <div class="preview-chat">
+          <div class="preview-msg user">
+            <div class="preview-msg-label">YOU</div>
+            What is the difference between cron.allow and cron.deny?
+          </div>
+          <div class="preview-msg ai">
+            <div class="preview-msg-label">K</div>
+            cron.allow is a whitelist — only listed users can use cron. cron.deny is a blacklist — listed users are denied. When both exist, cron.allow takes priority and cron.deny is ignored.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- end hero-right -->
+
+</section>
+</div>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="reveal">
+    <div class="section-label">What Kroma does</div>
+    <h2 class="section-title">Stop reading. Start asking.</h2>
+    <p class="section-sub">Every tool you need to actually understand your documents, not just store them.</p>
+  </div>
+
+  <div class="features-grid reveal">
+    <div class="feature-card">
+      <span class="feature-icon">💬</span>
+      <div class="feature-title">Document Chat</div>
+      <div class="feature-desc">Ask anything. Get answers from your files only. No guessing, no internet, no hallucination.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⚡</span>
+      <div class="feature-title">Flashcards</div>
+      <div class="feature-desc">Turn any document into a deck of Q&A cards instantly. Flip to reveal, review at your own pace.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🧠</span>
+      <div class="feature-title">Quiz Mode</div>
+      <div class="feature-desc">Test yourself with AI-generated multiple choice questions. Easy, Medium, or Hard. Scored with explanations.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📋</span>
+      <div class="feature-title">Smart Summary</div>
+      <div class="feature-desc">One click gets you a clean structured summary. Overview, key topics, and main takeaways ready in seconds.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🎯</span>
+      <div class="feature-title">Source Filtering</div>
+      <div class="feature-desc">Pick exactly which files to query. Kroma only searches what you choose.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">↓</span>
+      <div class="feature-title">Export to PDF</div>
+      <div class="feature-desc">Save your entire chat session as a clean PDF. Perfect for notes, reports, or sharing.</div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STACK -->
+<div class="stack-section" id="stack">
+  <div class="stack-inner">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:start;">
+
+      <div class="reveal">
+        <div class="section-label">How it works</div>
+        <h2 class="section-title">Serious tech. Simple to use.</h2>
+        <p style="color:var(--text3);font-size:1.1rem;line-height:1.8;margin-top:1rem;">Upload a PDF. Ask a question. Get an answer from your file in seconds. Behind the scenes, Kroma uses the same AI infrastructure trusted in production systems.</p>
+      </div>
+
+      <div class="reveal">
+        <p style="font-size:0.75rem;font-family:'DM Mono',monospace;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem;">What you experience</p>
+        <div class="stack-grid" style="margin-bottom:1.5rem;">
+          <div class="stack-pill"><span class="stack-pill-dot"></span>Instant answers from your files</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>No internet. No guessing.</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>Ask. Summarize. Quiz. Learn.</div>
+        </div>
+        <p style="font-size:0.75rem;font-family:'DM Mono',monospace;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem;">What powers it</p>
+        <div class="stack-grid">
+          <div class="stack-pill"><span class="stack-pill-dot"></span>FastAPI</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>LangChain</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>Groq API</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>Llama 4 Scout</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>RAG Pipeline</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <span>Kroma</span> · ASK. LEARN. KNOW. · Built with Python + Groq
+  </div>
+  <div class="footer-right" style="display:flex;gap:1rem;align-items:center;">
+    <a href="https://github.com/berna-ahito" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#eab308'" onmouseout="this.style.color='#78716c'">GitHub</a>
+    <a href="https://www.linkedin.com/in/bernadeth-ahito/" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#eab308'" onmouseout="this.style.color='#78716c'">LinkedIn</a>
+    <span style="color:var(--text3);">Claire Ahito · CIT-U Cebu · 2026</span>
+  </div>
+</footer>
+
+<script>
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) e.target.classList.add('visible');
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

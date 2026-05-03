@@ -1,0 +1,6 @@
+venv/
+chroma_db/
+chroma_db_next/
+__pycache__/
+.env
+*.pyc

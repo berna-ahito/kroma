@@ -1,0 +1,34 @@
+<svg width="100%" viewBox="0 0 680 280" role="img" style="" xmlns="http://www.w3.org/2000/svg">
+  <title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Kroma logo v3</title>
+  <desc style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Kroma brand logo with document-K mark and ASK. LEARN. KNOW. tagline</desc>
+
+  <!-- Icon mark: rounded square base -->
+  <rect x="180" y="70" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" stroke-width="2" style="fill:rgb(28, 25, 23);stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Document shape inside mark -->
+  <path d="M200 88 L248 88 L262 102 L262 148 L200 148 Z" fill="#292524" stroke="#3c3330" stroke-width="1" style="fill:rgb(41, 37, 36);stroke:rgb(60, 51, 48);color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- Folded corner -->
+  <path d="M248 88 L248 102 L262 102 Z" fill="#1c1917" stroke="#3c3330" stroke-width="1" style="fill:rgb(28, 25, 23);stroke:rgb(60, 51, 48);color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- K vertical -->
+  <rect x="213" y="102" width="7" height="34" rx="2" fill="#eab308" style="fill:rgb(234, 179, 8);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- K top arm -->
+  <path d="M220 119 L234 104" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none" style="fill:none;stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:7px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- K bottom arm -->
+  <path d="M220 119 L236 136" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none" style="fill:none;stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:7px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Scan lines -->
+  <line x1="213" y1="142" x2="230" y2="142" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.8" style="fill:rgb(0, 0, 0);stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:2px;stroke-linecap:round;stroke-linejoin:miter;opacity:0.8;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <line x1="213" y1="147" x2="242" y2="147" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.5" style="fill:rgb(0, 0, 0);stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:2px;stroke-linecap:round;stroke-linejoin:miter;opacity:0.5;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <line x1="213" y1="152" x2="236" y2="152" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.3" style="fill:rgb(0, 0, 0);stroke:rgb(234, 179, 8);color:rgb(255, 255, 255);stroke-width:2px;stroke-linecap:round;stroke-linejoin:miter;opacity:0.3;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Wordmark -->
+  <text x="288" y="133" font-family="'Outfit', 'Inter', sans-serif" font-size="58" font-weight="800" fill="#fafaf9" letter-spacing="-2" style="fill:rgb(250, 250, 249);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:Outfit, Inter, sans-serif;font-size:58px;font-weight:800;text-anchor:start;dominant-baseline:auto">Kroma</text>
+
+  <!-- Gold dot accent -->
+  <circle cx="296" cy="82" r="5" fill="#eab308" style="fill:rgb(234, 179, 8);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- Tagline: ASK. LEARN. KNOW. — DM Mono font, gold colored -->
+  <text x="291" y="162" font-family="'DM Mono', 'Courier New', monospace" font-size="13" font-weight="500" fill="#eab308" letter-spacing="4" style="fill:rgb(234, 179, 8);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;DM Mono&quot;, &quot;Courier New&quot;, monospace;font-size:13px;font-weight:500;text-anchor:start;dominant-baseline:auto">ASK. LEARN. KNOW.</text>
+
+</svg>

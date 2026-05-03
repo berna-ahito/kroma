@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-Content \"C:\\\\Users\\\\Bernadeth Ahito\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--rag-knowledge-agent\\\\30801f29-9b29-4559-bbb7-a1fed3b8cf7a\\\\tasks\\\\b4ns1pik0.output\" -Wait)",
+      "Bash(Select-String -Pattern \"Local URL|Network URL|Error|error|Traceback|ModuleNotFoundError\")"
+    ]
+  }
+}
