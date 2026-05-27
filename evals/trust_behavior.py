@@ -28,6 +28,9 @@ SOURCE = {
     "rank": 1,
     "source": "sample.pdf",
     "page": 2,
+    "file_type": "pdf",
+    "location_type": "page",
+    "location_label": "Page 2",
     "chunk_id": "sample-2-1",
     "doc_chunk_id": "sample.pdf:2:1",
     "score": 91,
@@ -86,6 +89,9 @@ FLASHCARD_SOURCES = [
         "rank": 2,
         "source": "other.pdf",
         "page": 5,
+        "file_type": "pdf",
+        "location_type": "page",
+        "location_label": "Page 5",
         "chunk_id": "other-5-1",
         "doc_chunk_id": "other.pdf:5:1",
         "score": 82,
@@ -190,6 +196,14 @@ def run_delete_filename_evals(failures: list) -> None:
             else:
                 print("PASS: delete target stays inside docs")
 
+            for filename in ("notes.txt", "guide.md", "guide.markdown"):
+                target = kroma_api._delete_doc_target(filename)
+                if target != (temp_docs / filename).resolve():
+                    failures.append((f"delete supports {filename}", temp_docs / filename, target))
+                    print(f"FAIL: delete supports {filename}")
+                else:
+                    print(f"PASS: delete supports {filename}")
+
             invalid_cases = [
                 ("delete rejects forward slash traversal", "../secret.pdf", 400),
                 ("delete rejects backslash traversal", r"..\secret.pdf", 400),
@@ -197,7 +211,9 @@ def run_delete_filename_evals(failures: list) -> None:
                 ("delete rejects null byte", "bad\x00.pdf", 400),
                 ("delete rejects control character", "bad\n.pdf", 400),
                 ("delete rejects DEL control character", "bad\x7f.pdf", 400),
-                ("delete rejects non-pdf", "notes.txt", 415),
+                ("delete rejects doc", "notes.doc", 415),
+                ("delete rejects html", "notes.html", 415),
+                ("delete rejects rtf", "notes.rtf", 415),
             ]
             for name, filename, status_code in invalid_cases:
                 _expect_http_error(
@@ -208,11 +224,21 @@ def run_delete_filename_evals(failures: list) -> None:
                 )
 
             _expect_http_error(
-                "delete returns 404 for missing validated PDF",
+                "delete returns 404 for missing validated document",
                 404,
                 lambda: kroma_api.delete_doc("missing.pdf"),
                 failures,
             )
+
+            for filename in ("delete-me.txt", "delete-me.md"):
+                target = temp_docs / filename
+                target.write_text("temporary", encoding="utf-8")
+                result = kroma_api.delete_doc(filename)
+                if target.exists() or result != {"deleted": filename}:
+                    failures.append((f"delete removes {filename}", "deleted", result))
+                    print(f"FAIL: delete removes {filename}")
+                else:
+                    print(f"PASS: delete removes {filename}")
 
             kept_outside = Path(temp_dir) / "secret.pdf"
             kept_outside.write_text("keep", encoding="utf-8")
@@ -225,6 +251,51 @@ def run_delete_filename_evals(failures: list) -> None:
             if not kept_outside.exists():
                 failures.append(("delete does not remove outside docs", "outside file exists", "deleted"))
                 print("FAIL: delete does not remove outside docs")
+        finally:
+            kroma_api.DOCS_FOLDER = original_docs_folder
+
+
+def run_upload_validation_evals(failures: list) -> None:
+    original_docs_folder = kroma_api.DOCS_FOLDER
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_docs = Path(temp_dir) / "docs"
+        temp_docs.mkdir()
+        kroma_api.DOCS_FOLDER = temp_docs
+        try:
+            for filename in ("notes.txt", "guide.md", "guide.markdown", "paper.pdf"):
+                safe_name = kroma_api._safe_upload_filename(filename)
+                if safe_name != filename:
+                    failures.append((f"upload accepts {filename}", filename, safe_name))
+                    print(f"FAIL: upload accepts {filename}")
+                else:
+                    print(f"PASS: upload accepts {filename}")
+
+            for filename in ("notes.doc", "page.html", "rich.rtf"):
+                _expect_http_error(
+                    f"upload rejects {filename}",
+                    415,
+                    lambda filename=filename: kroma_api._safe_upload_filename(filename),
+                    failures,
+                )
+
+            for name, payload, status_code in [
+                ("text rejects empty content", b" \n\t", 400),
+                ("text rejects non-utf8 content", b"\xff\xfeh\x00i\x00", 415),
+                ("text rejects control-heavy content", b"hello\x01" * 20, 415),
+            ]:
+                _expect_http_error(
+                    name,
+                    status_code,
+                    lambda payload=payload: kroma_api._validate_text_upload(payload),
+                    failures,
+                )
+
+            try:
+                kroma_api._validate_text_upload(b"\xef\xbb\xbfValid UTF-8 text.")
+                print("PASS: text accepts UTF-8-SIG content")
+            except Exception as exc:
+                failures.append(("text accepts UTF-8-SIG content", "no error", getattr(exc, "status_code", exc)))
+                print("FAIL: text accepts UTF-8-SIG content")
         finally:
             kroma_api.DOCS_FOLDER = original_docs_folder
 
@@ -244,6 +315,12 @@ def main() -> int:
             failures.append((case["name"], case["expected"], actual))
 
     catalog = build_source_catalog(FLASHCARD_SOURCES)
+    if catalog[0].get("location_label") != "Page 2":
+        failures.append(("source catalog keeps location_label", "Page 2", catalog[0]))
+        print("FAIL: source catalog keeps location_label")
+    else:
+        print("PASS: source catalog keeps location_label")
+
     sanitized = sanitize_flashcards_source_ids(FLASHCARD_CARDS, catalog)
     if sanitized[0] != {
         "question": "What is Kroma?",
@@ -313,6 +390,7 @@ def main() -> int:
         print("PASS: flashcard context exposes only source IDs")
 
     run_delete_filename_evals(failures)
+    run_upload_validation_evals(failures)
 
     if failures:
         print("\nFailures:")

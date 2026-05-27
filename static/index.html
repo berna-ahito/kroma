@@ -1118,10 +1118,10 @@
   <div class="sidebar-label">Upload</div>
 
   <label class="upload-area" id="uploadArea">
-    <input type="file" id="fileInput" accept=".pdf" multiple>
+    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.markdown" multiple>
     <span class="upload-icon">📄</span>
     <span class="upload-title">Click or drag to upload</span>
-    <span class="upload-hint">PDF files only · 25MB max</span>
+    <span class="upload-hint">PDF, TXT, Markdown · 25MB max</span>
   </label>
 
   <button class="btn-primary" id="processBtn" onclick="processDocuments()">
@@ -1242,9 +1242,9 @@
           <div class="empty-state" id="emptyState">
             <span class="empty-icon">🗂️</span>
             <h3>Ask your documents anything</h3>
-            <p>Upload PDFs, process them, then ask questions. Answers come only from your files — no guessing.</p>
+            <p>Upload PDFs, TXT, or Markdown files, process them, then ask questions. Answers come only from your files — no guessing.</p>
             <div class="steps">
-              <div class="step"><span class="step-num">1</span><span>Upload a PDF from your computer</span></div>
+              <div class="step"><span class="step-num">1</span><span>Upload a supported file from your computer</span></div>
               <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong> to prepare your files</span></div>
               <div class="step"><span class="step-num">3</span><span>Ask any question and get answers from your documents</span></div>
             </div>
@@ -1268,10 +1268,15 @@
     e.preventDefault();
     uploadArea.classList.remove('dragover');
     for (const file of e.dataTransfer.files) {
-      if (file.name.endsWith('.pdf')) await uploadFile(file);
+      if (isSupportedUpload(file.name)) await uploadFile(file);
+      else showToast(`Unsupported file: ${file.name}`, 'error');
     }
     await init();
   });
+
+  function isSupportedUpload(name) {
+    return /\.(pdf|txt|md|markdown)$/i.test(String(name || ''));
+  }
 
   async function uploadFile(file) {
     const form = new FormData();
@@ -1351,18 +1356,23 @@
   const CHAT_SOURCE_PREVIEW_LIMIT = 3;
   let chatSourceDisclosureId = 0;
 
-  function formatSourcePage(source) {
+  function sourceLocationLabel(source) {
+    if (source?.location_label) return source.location_label;
     return source?.page !== undefined && source?.page !== null && source.page !== ''
-      ? ` p.${source.page}`
-      : '';
+      ? `Page ${source.page}`
+      : 'Document';
+  }
+
+  function formatSourceLocation(source) {
+    return ` · ${sourceLocationLabel(source)}`;
   }
 
   function formatSourceSummary(sources) {
     const first = sources[0] || {};
     const filename = first?.source || 'Unknown source';
-    const firstLocation = `${filename}${formatSourcePage(first)}`;
+    const firstLocation = `${filename}${formatSourceLocation(first)}`;
     const uniqueLocations = new Set(
-      sources.map(source => `${source?.source || 'Unknown source'}${formatSourcePage(source)}`)
+      sources.map(source => `${source?.source || 'Unknown source'}${formatSourceLocation(source)}`)
     );
     const more = uniqueLocations.size > 1 ? ` + ${uniqueLocations.size - 1} more` : '';
     const chunks = sources.length === 1 ? '1 chunk' : `${sources.length} chunks`;
@@ -1376,9 +1386,9 @@
     const meta = document.createElement('div');
     meta.className = 'source-meta';
     const filename = source?.source || 'Unknown source';
-    const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+    const location = sourceLocationLabel(source);
     const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-    meta.textContent = `${filename} • ${page} • Relevance ${score}`;
+    meta.textContent = `${filename} • ${location} • Relevance ${score}`;
     item.appendChild(meta);
 
     if (source?.preview) {
@@ -1611,9 +1621,9 @@
         <div class="empty-state" id="emptyState">
           <span class="empty-icon">🗂️</span>
           <h3>Ask your documents anything</h3>
-          <p>Upload PDFs, process them, then ask questions.</p>
+          <p>Upload PDFs, TXT, or Markdown files, process them, then ask questions.</p>
           <div class="steps">
-            <div class="step"><span class="step-num">1</span><span>Upload a PDF</span></div>
+            <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
             <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
           </div>
         </div>`;
@@ -1882,9 +1892,9 @@
       const meta = document.createElement('div');
       meta.className = 'source-meta';
       const filename = source?.source || 'Unknown source';
-      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const location = sourceLocationLabel(source);
       const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
       item.appendChild(meta);
 
       if (source?.preview) {
@@ -2168,9 +2178,9 @@
       const meta = document.createElement('div');
       meta.className = 'source-meta';
       const filename = source?.source || 'Unknown source';
-      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const location = sourceLocationLabel(source);
       const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
       item.appendChild(meta);
 
       if (source?.preview) {
@@ -2250,9 +2260,9 @@
       const meta = document.createElement('div');
       meta.className = 'source-meta';
       const filename = source?.source || 'Unknown source';
-      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const location = sourceLocationLabel(source);
       const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
       item.appendChild(meta);
 
       if (source?.preview) {

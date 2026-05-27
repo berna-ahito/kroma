@@ -1,3 +1,4 @@
+import gc
 import os
 from pathlib import Path
 from typing import Callable
@@ -66,8 +67,8 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     """
     Search the vector store for relevant chunks.
 
-    Returns (context_str, sources). Each source has source, page, chunk ids,
-    score, distance, and preview fields for UI display.
+    Returns (context_str, sources). Each source has source, location labels,
+    chunk ids, score, distance, and preview fields for UI display.
     """
     if not CHROMA_PATH.exists():
         _emit(progress_callback, "missing_index", {"message": "No local vector index found."})
@@ -99,6 +100,13 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     except Exception as exc:
         _emit(progress_callback, "error", {"message": str(exc)})
         return "", []
+    finally:
+        try:
+            vectorstore._client.clear_system_cache()
+        except Exception:
+            pass
+        del vectorstore
+        gc.collect()
 
     if not results:
         _emit(progress_callback, "empty", {"message": "No chunks matched the question."})
@@ -108,13 +116,22 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     sources = []
     for rank, (doc, distance) in enumerate(results, start=1):
         src = Path(doc.metadata.get("source", "unknown")).name
-        page = int(doc.metadata.get("page", 0)) + 1
+        file_type = doc.metadata.get("file_type")
+        location_type = doc.metadata.get("location_type")
+        location_label = doc.metadata.get("location_label")
+        page = None
+        if doc.metadata.get("page") is not None:
+            page = int(doc.metadata.get("page")) + 1
+            location_label = location_label or f"Page {page}"
+            location_type = location_type or "page"
+        location_label = location_label or "Document"
+        location_type = location_type or "document"
         chunk_id = doc.metadata.get("chunk_id")
         doc_chunk_id = doc.metadata.get("doc_chunk_id")
         score = _confidence_from_distance(float(distance))
 
         context_parts.append(
-            f"[Source: {src}, page {page}]\n"
+            f"[Source: {src}, {location_label}]\n"
             f"{doc.page_content}"
         )
 
@@ -122,6 +139,9 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
             "rank": rank,
             "source": src,
             "page": page,
+            "file_type": file_type,
+            "location_type": location_type,
+            "location_label": location_label,
             "chunk_id": chunk_id,
             "doc_chunk_id": doc_chunk_id,
             "score": score,
@@ -364,6 +384,9 @@ def build_source_catalog(sources: list) -> list:
                 "id": f"s{index}",
                 "source": source.get("source", "unknown"),
                 "page": source.get("page"),
+                "file_type": source.get("file_type"),
+                "location_type": source.get("location_type"),
+                "location_label": source.get("location_label"),
                 "score": source.get("score"),
                 "preview": source.get("preview", ""),
             }
