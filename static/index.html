@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1179,6 +1180,10 @@
   let chatHistory = [];
   let isIndexed = false;
 
+  function renderSafeMarkdown(target, text) {
+    target.innerHTML = DOMPurify.sanitize(marked.parse(String(text ?? '')));
+  }
+
   async function init() {
     try {
       const res = await fetch('/api/status');
@@ -1316,7 +1321,7 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = marked.parse(text);
+    renderSafeMarkdown(bubble, text);
 
     if (role !== 'user' && Array.isArray(sources) && sources.length > 0) {
       const sourceList = document.createElement('div');
@@ -1374,22 +1379,50 @@
 
   function renderLibrary(docs) {
     const list = document.getElementById('libraryList');
-    list.innerHTML = '';
+    list.textContent = '';
     if (!docs.length) {
-      list.innerHTML = '<span class="empty-lib">No documents yet.</span>';
+      const empty = document.createElement('span');
+      empty.className = 'empty-lib';
+      empty.textContent = 'No documents yet.';
+      list.appendChild(empty);
       return;
     }
     docs.forEach(name => {
+      const docName = String(name ?? '');
       const item = document.createElement('div');
       item.className = 'doc-item';
-      item.innerHTML = `
-        <input type="checkbox" class="doc-check" data-name="${name}" checked style="accent-color:var(--gold);cursor:pointer;flex-shrink:0;">
-        <span class="doc-icon">📄</span>
-        <div class="doc-info">
-          <div class="doc-name" title="${name}">${name}</div>
-        </div>
-        <button class="btn-delete" onclick="deleteDoc('${name.replace(/'/g, "\\'")}')" title="Remove">✕</button>
-      `;
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'doc-check';
+      checkbox.dataset.name = docName;
+      checkbox.checked = true;
+      checkbox.style.cssText = 'accent-color:var(--gold);cursor:pointer;flex-shrink:0;';
+
+      const icon = document.createElement('span');
+      icon.className = 'doc-icon';
+      icon.textContent = '📄';
+
+      const info = document.createElement('div');
+      info.className = 'doc-info';
+
+      const docTitle = document.createElement('div');
+      docTitle.className = 'doc-name';
+      docTitle.title = docName;
+      docTitle.textContent = docName;
+      info.appendChild(docTitle);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn-delete';
+      deleteBtn.type = 'button';
+      deleteBtn.title = 'Remove';
+      deleteBtn.textContent = '✕';
+      deleteBtn.onclick = () => deleteDoc(docName);
+
+      item.appendChild(checkbox);
+      item.appendChild(icon);
+      item.appendChild(info);
+      item.appendChild(deleteBtn);
       list.appendChild(item);
     });
   }
@@ -1769,20 +1802,36 @@
   function renderHistory() {
     const list = document.getElementById('historyList');
     const saved = getSavedChats();
-    list.innerHTML = '';
+    list.textContent = '';
     if (!saved.length) {
-      list.innerHTML = '<span class="empty-lib">No saved chats yet.</span>';
+      const empty = document.createElement('span');
+      empty.className = 'empty-lib';
+      empty.textContent = 'No saved chats yet.';
+      list.appendChild(empty);
       return;
     }
     saved.forEach(entry => {
       const item = document.createElement('button');
+      const title = String(entry?.title ?? 'Untitled chat');
+      const date = String(entry?.date ?? '');
       item.className = 'history-item';
-      item.innerHTML = `
-        <div class="history-info">
-          <div class="history-title" title="${entry.title}">${entry.title}</div>
-          <div class="history-date">${entry.date}</div>
-        </div>
-      `;
+      item.type = 'button';
+
+      const info = document.createElement('div');
+      info.className = 'history-info';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'history-title';
+      titleEl.title = title;
+      titleEl.textContent = title;
+
+      const dateEl = document.createElement('div');
+      dateEl.className = 'history-date';
+      dateEl.textContent = date;
+
+      info.appendChild(titleEl);
+      info.appendChild(dateEl);
+      item.appendChild(info);
       item.onclick = () => loadChat(entry);
       list.appendChild(item);
     });
@@ -2210,18 +2259,37 @@
   function showConfirm(message, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
-    overlay.innerHTML = `
-      <div class="confirm-box">
-        <div class="confirm-msg">${message}</div>
-        <div class="confirm-btns">
-          <button class="btn-secondary" id="confirmCancel" style="width:auto;padding:0.5rem 1rem;">Cancel</button>
-          <button class="btn-primary" id="confirmOk" style="width:auto;padding:0.5rem 1rem;background:#dc2626;color:white;">Confirm</button>
-        </div>
-      </div>
-    `;
+
+    const box = document.createElement('div');
+    box.className = 'confirm-box';
+
+    const msg = document.createElement('div');
+    msg.className = 'confirm-msg';
+    msg.textContent = String(message ?? '');
+
+    const buttons = document.createElement('div');
+    buttons.className = 'confirm-btns';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.type = 'button';
+    cancelBtn.style.cssText = 'width:auto;padding:0.5rem 1rem;';
+    cancelBtn.textContent = 'Cancel';
+
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn-primary';
+    okBtn.type = 'button';
+    okBtn.style.cssText = 'width:auto;padding:0.5rem 1rem;background:#dc2626;color:white;';
+    okBtn.textContent = 'Confirm';
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(okBtn);
+    box.appendChild(msg);
+    box.appendChild(buttons);
+    overlay.appendChild(box);
     document.body.appendChild(overlay);
-    document.getElementById('confirmCancel').onclick = () => overlay.remove();
-    document.getElementById('confirmOk').onclick = () => { overlay.remove(); onConfirm(); };
+    cancelBtn.onclick = () => overlay.remove();
+    okBtn.onclick = () => { overlay.remove(); onConfirm(); };
   }
 
   renderHistory();
