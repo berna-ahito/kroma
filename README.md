@@ -1,6 +1,6 @@
 # Kroma — Ask. Learn. Know.
 
-AI that reads your documents, not the internet. Ask questions, generate flashcards, and quiz yourself from your own PDFs. Built with FastAPI, LangChain, Groq, and RAG.
+AI that reads your documents, not the internet. Ask questions, generate flashcards, and quiz yourself from your own PDFs, TXT files, and Markdown notes. Built with FastAPI, LangChain, Groq, and RAG.
 
 **Live demo:** coming soon  
 **Built by:** [Claire Ahito](https://github.com/berna-ahito) · CIT-U Cebu · 2026
@@ -33,7 +33,7 @@ Kroma flips that. Upload your files, ask your question, and get an answer ground
 | AI / LLM | Groq API · Llama 4 Scout |
 | RAG Pipeline | LangChain · ChromaDB |
 | Embeddings | BAAI/bge-small-en-v1.5 · SentenceTransformers |
-| PDF Processing | PyPDF |
+| Document Processing | PyPDF · UTF-8 text/Markdown |
 | Frontend | Vanilla HTML · CSS · JS |
 
 ---
@@ -41,18 +41,18 @@ Kroma flips that. Upload your files, ask your question, and get an answer ground
 ## How it works
 
 ```
-PDF Upload → Text Extraction → Chunking → Vector Embeddings → ChromaDB
+PDF/TXT/Markdown Upload → Text Extraction → Chunking → Vector Embeddings → ChromaDB
                                                                     ↓
 User Question → Semantic Search → Top K Chunks → Groq (Llama 4 Scout) → Answer
 ```
 
-1. PDFs are split into chunks and converted into vector embeddings
+1. Supported files are split into chunks and converted into vector embeddings
 2. Embeddings are stored in ChromaDB (local vector database)
 3. When you ask a question, ChromaDB finds the most semantically similar chunks
 4. Those chunks are sent to Groq as context
 5. Groq answers from the retrieved context, and the app shows the source chunks used
 
-Uploads are limited to PDF files up to 25 MB each.
+Uploads are limited to PDF, TXT, MD, and Markdown files up to 25 MB each. Text and Markdown uploads must be UTF-8 or UTF-8-SIG text.
 
 ---
 
@@ -98,7 +98,7 @@ Hosted demos on free tiers may take a short cold start after inactivity.
 kroma/
 ├── api.py            # FastAPI backend — routes, upload, chat, process
 ├── rag.py            # RAG pipeline — retrieval, Groq integration
-├── ingest.py         # PDF ingestion — chunking, embeddings, ChromaDB
+├── ingest.py         # Document ingestion — chunking, embeddings, ChromaDB
 ├── static/
 │   ├── index.html    # Main app UI
 │   └── landing.html  # Landing page
@@ -114,7 +114,7 @@ This is Build 1 of my AI engineering portfolio. I am a 4th-year BSIT student at 
 
 Kroma demonstrates:
 - End-to-end RAG pipeline implementation from scratch
-- FastAPI backend with PDF file handling and JSON API responses
+- FastAPI backend with document upload handling and JSON API responses
 - Vector database integration with ChromaDB
 - LLM integration via Groq API
 - Clean product thinking — landing page, features, UX

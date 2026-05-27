@@ -9,7 +9,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from ingest import CHROMA_PATH, DOCS_FOLDER, STATS_FILE, ingest_documents, load_index_stats
+from ingest import (
+    CHROMA_PATH,
+    DOCS_FOLDER,
+    STATS_FILE,
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    SUPPORTED_TEXT_EXTENSIONS,
+    ingest_documents,
+    is_control_heavy_text,
+    is_supported_document,
+    load_index_stats,
+)
 from rag import (
     build_source_catalog,
     build_source_linked_context,
@@ -31,6 +41,7 @@ DOCS_FOLDER.mkdir(exist_ok=True)
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 PDF_HEADER = b"%PDF-"
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+SUPPORTED_UPLOAD_LABEL = "PDF, TXT, and Markdown files"
 WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -53,25 +64,26 @@ def _upload_error(status_code: int, message: str):
 def _safe_upload_filename(filename: str) -> str:
     if not filename:
         _upload_error(400, "Upload must include a filename.")
-    if "\x00" in filename or any(ord(ch) < 32 for ch in filename):
+    if "\x00" in filename or any(ord(ch) < 32 or ord(ch) == 127 for ch in filename):
         _upload_error(400, "Filename contains invalid characters.")
     # Reject client-supplied paths before deriving a storage name.
     if filename != PurePosixPath(filename).name or filename != PureWindowsPath(filename).name:
         _upload_error(400, "Filename must not include path separators.")
-    if PurePosixPath(filename).suffix.lower() != ".pdf":
-        _upload_error(415, "Only .pdf files are supported.")
+    suffix = PurePosixPath(filename).suffix.lower()
+    if suffix not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        _upload_error(415, f"Only {SUPPORTED_UPLOAD_LABEL} are supported.")
 
-    stem = filename[:-4].strip(" ._-")
+    stem = filename[: -len(PurePosixPath(filename).suffix)].strip(" ._-")
     if not stem:
-        _upload_error(400, "Filename must include a valid name before .pdf.")
+        _upload_error(400, "Filename must include a valid name before the extension.")
 
     safe_stem = SAFE_FILENAME_RE.sub("_", stem).strip("._-")[:80] or "upload"
     if safe_stem.upper() in WINDOWS_RESERVED_NAMES:
         safe_stem = f"upload-{uuid.uuid4().hex[:8]}"
-    safe_name = f"{safe_stem}.pdf"
+    safe_name = f"{safe_stem}{suffix}"
     dest = DOCS_FOLDER / safe_name
     if dest.exists():
-        safe_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}.pdf"
+        safe_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}{suffix}"
     return safe_name
 
 
@@ -84,8 +96,8 @@ def _delete_doc_target(filename: str) -> Path:
         raise HTTPException(400, "Filename must not include path separators.")
     if PurePosixPath(filename).is_absolute() or PureWindowsPath(filename).is_absolute():
         raise HTTPException(400, "Filename must not be an absolute path.")
-    if PurePosixPath(filename).suffix.lower() != ".pdf":
-        raise HTTPException(415, "Only .pdf files can be deleted.")
+    if PurePosixPath(filename).suffix.lower() not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        raise HTTPException(415, f"Only {SUPPORTED_UPLOAD_LABEL} can be deleted.")
 
     docs_root = DOCS_FOLDER.resolve()
     target = (DOCS_FOLDER / filename).resolve()
@@ -96,14 +108,27 @@ def _delete_doc_target(filename: str) -> Path:
     return target
 
 
-async def _read_pdf_upload(file: UploadFile) -> bytes:
+def _validate_text_upload(data: bytes) -> None:
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        _upload_error(415, "Uploaded text file must be UTF-8 encoded.")
+    if not text.strip():
+        _upload_error(400, "Uploaded text file is empty.")
+    if is_control_heavy_text(text):
+        _upload_error(415, "Uploaded text file appears to be binary or control-heavy.")
+
+
+async def _read_supported_upload(file: UploadFile, suffix: str) -> bytes:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if not data:
-        _upload_error(400, "Uploaded PDF is empty.")
+        _upload_error(400, "Uploaded file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
-        _upload_error(413, "PDF upload exceeds the 25 MB limit.")
-    if not data.startswith(PDF_HEADER):
+        _upload_error(413, "Upload exceeds the 25 MB limit.")
+    if suffix == ".pdf" and not data.startswith(PDF_HEADER):
         _upload_error(415, "Uploaded file content is not a PDF.")
+    if suffix in SUPPORTED_TEXT_EXTENSIONS:
+        _validate_text_upload(data)
     return data
     
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -114,14 +139,15 @@ def status():
     return {
         "indexed": CHROMA_PATH.exists() and any(CHROMA_PATH.iterdir()) if CHROMA_PATH.exists() else False,
         "stats": stats,
-        "docs": [f.name for f in DOCS_FOLDER.glob("*.pdf")]
+        "docs": [f.name for f in sorted(DOCS_FOLDER.iterdir()) if is_supported_document(f)]
     }
 
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
     safe_name = _safe_upload_filename(file.filename or "")
-    data = await _read_pdf_upload(file)
+    suffix = PurePosixPath(safe_name).suffix.lower()
+    data = await _read_supported_upload(file, suffix)
     dest = (DOCS_FOLDER / safe_name).resolve()
     docs_root = DOCS_FOLDER.resolve()
     # Defense-in-depth guard: stored uploads must remain inside docs/.
@@ -131,15 +157,15 @@ async def upload(file: UploadFile = File(...)):
         with dest.open("wb") as f:
             f.write(data)
     except OSError:
-        _upload_error(500, "Could not save uploaded PDF.")
+        _upload_error(500, "Could not save uploaded file.")
     return {"filename": safe_name, "saved": True}
 
 
 @app.post("/api/process")
 def process():
-    pdfs = list(DOCS_FOLDER.glob("*.pdf"))
-    if not pdfs:
-        raise HTTPException(400, "No PDFs to process.")
+    docs = [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]
+    if not docs:
+        raise HTTPException(400, "No supported documents to process.")
     try:
         stats = ingest_documents()
         return {"success": True, "stats": stats}
@@ -244,7 +270,7 @@ def clear_library():
                 path.unlink(missing_ok=True)
         except Exception as e:
             print(f"Could not delete {path}: {e}")
-    for pdf in DOCS_FOLDER.glob("*.pdf"):
+    for pdf in [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]:
         try:
             pdf.unlink(missing_ok=True)
         except Exception:

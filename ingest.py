@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -23,6 +24,54 @@ EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 STATS_FILE = BASE_DIR / "index_stats.json"
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 120
+SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {".pdf", *SUPPORTED_TEXT_EXTENSIONS}
+TEXT_EXTENSION_LABELS = {
+    ".txt": ("txt", "Text"),
+    ".md": ("markdown", "Markdown"),
+    ".markdown": ("markdown", "Markdown"),
+}
+
+
+def is_supported_document(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in SUPPORTED_DOCUMENT_EXTENSIONS
+
+
+def _decode_text_bytes(data: bytes) -> str:
+    return data.decode("utf-8-sig")
+
+
+def is_control_heavy_text(text: str) -> bool:
+    if "\x00" in text:
+        return True
+    if not text:
+        return False
+    control_chars = sum(
+        1
+        for ch in text
+        if (ord(ch) < 32 and ch not in "\t\n\r") or ord(ch) == 127
+    )
+    return control_chars / len(text) > 0.01
+
+
+def load_text_document(path: Path) -> Document:
+    text = _decode_text_bytes(path.read_bytes())
+    if not text.strip():
+        raise ValueError(f"{path.name} is empty.")
+    if is_control_heavy_text(text):
+        raise ValueError(f"{path.name} contains too many control characters.")
+
+    file_type, location_label = TEXT_EXTENSION_LABELS[path.suffix.lower()]
+    return Document(
+        page_content=text,
+        metadata={
+            "source": path.name,
+            "doc_name": path.name,
+            "file_type": file_type,
+            "location_type": "document",
+            "location_label": location_label,
+        },
+    )
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -42,8 +91,8 @@ def _file_metadata(path: Path) -> dict:
 
 def ingest_documents():
     DOCS_FOLDER.mkdir(exist_ok=True)
-    pdf_files = sorted(path for path in DOCS_FOLDER.iterdir() if path.suffix.lower() == ".pdf")
-    if not pdf_files:
+    source_files = sorted(path for path in DOCS_FOLDER.iterdir() if is_supported_document(path))
+    if not source_files:
         stats = {"total_chunks": 0, "total_pages": 0, "docs": [], "processed_at": None}
         _write_json(STATS_FILE, stats)
         return stats
@@ -55,12 +104,18 @@ def ingest_documents():
     all_documents = []
     doc_page_counts = {}
     doc_file_meta = {}
+    text_document_names = set()
 
-    for pdf_path in pdf_files:
-        pages = PyPDFLoader(str(pdf_path)).load()
-        doc_page_counts[pdf_path.name] = len(pages)
-        doc_file_meta[pdf_path.name] = _file_metadata(pdf_path)
-        all_documents.extend(pages)
+    for source_path in source_files:
+        doc_file_meta[source_path.name] = _file_metadata(source_path)
+        if source_path.suffix.lower() == ".pdf":
+            pages = PyPDFLoader(str(source_path)).load()
+            doc_page_counts[source_path.name] = len(pages)
+            all_documents.extend(pages)
+        else:
+            all_documents.append(load_text_document(source_path))
+            doc_page_counts[source_path.name] = 0
+            text_document_names.add(source_path.name)
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     chunks = splitter.split_documents(all_documents)
@@ -71,19 +126,30 @@ def ingest_documents():
 
     for global_idx, chunk in enumerate(chunks, start=1):
         name = Path(chunk.metadata.get("source", "unknown")).name
-        page_zero_based = int(chunk.metadata.get("page", 0))
-        page_display = page_zero_based + 1
-
         doc_chunk_counts[name] += 1
-        doc_indexed_pages[name].add(page_display)
-        doc_page_chunk_counts[name][page_display] += 1
 
         chunk.metadata["source"] = name
         chunk.metadata["doc_name"] = name
-        chunk.metadata["page"] = page_zero_based
-        chunk.metadata["page_label"] = page_display
         chunk.metadata["chunk_id"] = global_idx
         chunk.metadata["doc_chunk_id"] = doc_chunk_counts[name]
+
+        if name in text_document_names:
+            file_type, location_label = TEXT_EXTENSION_LABELS[Path(name).suffix.lower()]
+            chunk.metadata["file_type"] = file_type
+            chunk.metadata["location_type"] = "document"
+            chunk.metadata["location_label"] = location_label
+            continue
+
+        page_zero_based = int(chunk.metadata.get("page", 0))
+        page_display = page_zero_based + 1
+        doc_indexed_pages[name].add(page_display)
+        doc_page_chunk_counts[name][page_display] += 1
+
+        chunk.metadata["page"] = page_zero_based
+        chunk.metadata["page_label"] = page_display
+        chunk.metadata["file_type"] = "pdf"
+        chunk.metadata["location_type"] = "page"
+        chunk.metadata["location_label"] = f"Page {page_display}"
 
     embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
     try:
@@ -105,8 +171,9 @@ def ingest_documents():
         gc.collect()
 
     docs_info = []
-    for pdf_path in pdf_files:
-        name = pdf_path.name
+    for source_path in source_files:
+        name = source_path.name
+        suffix = source_path.suffix.lower()
         page_chunks = [
             {"page": page, "chunks": count}
             for page, count in sorted(doc_page_chunk_counts.get(name, {}).items())
@@ -114,6 +181,7 @@ def ingest_documents():
         docs_info.append(
             {
                 "name": name,
+                "file_type": "pdf" if suffix == ".pdf" else TEXT_EXTENSION_LABELS[suffix][0],
                 "pages": doc_page_counts.get(name, 0),
                 "chunks": doc_chunk_counts.get(name, 0),
                 "indexed_pages": sorted(doc_indexed_pages.get(name, set())),

@@ -98,6 +98,32 @@ FLASHCARD_SOURCES = [
         "distance": 0.22,
         "preview": "Second source preview.",
     },
+    {
+        "rank": 3,
+        "source": "notes.txt",
+        "page": None,
+        "file_type": "txt",
+        "location_type": "document",
+        "location_label": "Text",
+        "chunk_id": 3,
+        "doc_chunk_id": 1,
+        "score": 80,
+        "distance": 0.25,
+        "preview": "Text source preview.",
+    },
+    {
+        "rank": 4,
+        "source": "guide.md",
+        "page": None,
+        "file_type": "markdown",
+        "location_type": "document",
+        "location_label": "Markdown",
+        "chunk_id": 4,
+        "doc_chunk_id": 1,
+        "score": 79,
+        "distance": 0.27,
+        "preview": "Markdown source preview.",
+    },
 ]
 
 
@@ -270,10 +296,37 @@ def run_upload_validation_evals(failures: list) -> None:
                 else:
                     print(f"PASS: upload accepts {filename}")
 
+            (temp_docs / "notes.txt").write_text("existing", encoding="utf-8")
+            deduped_name = kroma_api._safe_upload_filename("notes.txt")
+            if deduped_name == "notes.txt" or not deduped_name.startswith("notes-") or not deduped_name.endswith(".txt"):
+                failures.append(("upload de-dupes txt filename", "notes-*.txt", deduped_name))
+                print("FAIL: upload de-dupes txt filename")
+            else:
+                print("PASS: upload de-dupes txt filename")
+
+            reserved_name = kroma_api._safe_upload_filename("CON.md")
+            if not reserved_name.startswith("upload-") or not reserved_name.endswith(".md"):
+                failures.append(("upload rejects reserved markdown stem", "upload-*.md", reserved_name))
+                print("FAIL: upload rejects reserved markdown stem")
+            else:
+                print("PASS: upload rejects reserved markdown stem")
+
             for filename in ("notes.doc", "page.html", "rich.rtf"):
                 _expect_http_error(
                     f"upload rejects {filename}",
                     415,
+                    lambda filename=filename: kroma_api._safe_upload_filename(filename),
+                    failures,
+                )
+
+            for name, filename in [
+                ("upload rejects forward slash traversal", "../notes.txt"),
+                ("upload rejects backslash traversal", r"..\notes.md"),
+                ("upload rejects control character", "bad\n.markdown"),
+            ]:
+                _expect_http_error(
+                    name,
+                    400,
                     lambda filename=filename: kroma_api._safe_upload_filename(filename),
                     failures,
                 )
@@ -320,6 +373,18 @@ def main() -> int:
         print("FAIL: source catalog keeps location_label")
     else:
         print("PASS: source catalog keeps location_label")
+
+    if catalog[2].get("location_label") != "Text" or catalog[2].get("page") is not None:
+        failures.append(("source catalog keeps text location_label", "Text with no page", catalog[2]))
+        print("FAIL: source catalog keeps text location_label")
+    else:
+        print("PASS: source catalog keeps text location_label")
+
+    if catalog[3].get("location_label") != "Markdown" or catalog[3].get("page") is not None:
+        failures.append(("source catalog keeps markdown location_label", "Markdown with no page", catalog[3]))
+        print("FAIL: source catalog keeps markdown location_label")
+    else:
+        print("PASS: source catalog keeps markdown location_label")
 
     sanitized = sanitize_flashcards_source_ids(FLASHCARD_CARDS, catalog)
     if sanitized[0] != {
