@@ -21,6 +21,7 @@ from rag import (
     retrieve_chunks,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
+    sanitize_summary_source_ids,
     should_show_sources,
 )
 
@@ -194,11 +195,17 @@ class SummaryRequest(BaseModel):
 
 @app.post("/api/summary")
 def summary(req: SummaryRequest):
-    context, _ = retrieve_chunks("main topics overview summary key points introduction", n_results=20, selected_docs=req.selected_docs)
+    context, sources = retrieve_chunks("main topics overview summary key points introduction", n_results=20, selected_docs=req.selected_docs)
     if not context:
         raise HTTPException(400, "No content to summarize.")
-    result = generate_summary(context)
-    return {"summary": result}
+    source_catalog = build_source_catalog(sources)
+    source_context = build_source_linked_context(context, source_catalog)
+    sections = generate_summary(
+        source_context,
+        source_ids=[source["id"] for source in source_catalog],
+    )
+    sections = sanitize_summary_source_ids(sections, source_catalog)
+    return {"summary": {"sections": sections}, "sources": source_catalog}
 
 @app.post("/api/suggest")
 def suggest(req: SuggestRequest):

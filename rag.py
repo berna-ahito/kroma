@@ -262,17 +262,29 @@ def generate_quiz(context: str, difficulty: str = "medium", count: int = 8, sour
                 pass
         return []
 
-def generate_summary(context: str) -> str:
+def generate_summary(context: str, source_ids: list | None = None) -> list:
+    allowed_source_ids = source_ids or []
+    source_instruction = ""
+    if allowed_source_ids:
+        source_instruction = (
+            f"Use source_ids only from this list: {', '.join(allowed_source_ids)}. "
+            "Use an empty source_ids array when a section or bullet is not directly supported by a supplied source. "
+            "Do not include filenames, page numbers, previews, or any source metadata."
+        )
+
     messages = [
         {
             "role": "system",
             "content": (
                 "You are a document summarizer. Given document context, produce a clean structured summary. "
-                "Format your response in markdown with these sections: "
-                "## Overview (2-3 sentences), "
-                "## Key Topics (bullet points), "
-                "## Main Takeaways (3-5 bullet points). "
-                "Be concise and professional. Never mention filenames or technical details."
+                "Respond ONLY with a valid JSON array, no markdown, no explanation, no backticks. "
+                "Format: [{\"heading\":\"Overview\",\"text\":\"2-3 concise sentences\",\"source_ids\":[\"s1\"],\"bullets\":[]},"
+                "{\"heading\":\"Key Topics\",\"text\":\"\",\"source_ids\":[],\"bullets\":[{\"text\":\"...\",\"source_ids\":[\"s1\"]}]},"
+                "{\"heading\":\"Main Takeaways\",\"text\":\"\",\"source_ids\":[],\"bullets\":[{\"text\":\"...\",\"source_ids\":[\"s1\"]}]}]. "
+                "Use exactly these three headings: Overview, Key Topics, Main Takeaways. "
+                "Key Topics and Main Takeaways should use concise bullets. "
+                "Be concise and professional. Never mention filenames or technical details. "
+                f"{source_instruction}"
             )
         },
         {
@@ -285,7 +297,28 @@ def generate_summary(context: str) -> str:
         messages=messages,
         temperature=0.2,
     )
-    return response.choices[0].message.content
+    raw = response.choices[0].message.content.strip()
+    raw = re.sub(r'```json|```', '', raw).strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and isinstance(parsed.get("sections"), list):
+            return parsed["sections"]
+        return parsed
+    except Exception:
+        match = re.search(r'\[.*\]', raw, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except Exception:
+                pass
+        return [
+            {
+                "heading": "Overview",
+                "text": raw,
+                "source_ids": [],
+                "bullets": [],
+            }
+        ]
 
 def generate_suggestions(context: str) -> list:
     messages = [
@@ -420,6 +453,77 @@ def sanitize_quiz_source_ids(questions: list, source_catalog: list) -> list:
                 "answer": answer,
                 "explanation": explanation,
                 "source_ids": source_ids,
+            }
+        )
+    return sanitized
+
+
+def sanitize_summary_source_ids(sections: list, source_catalog: list) -> list:
+    valid_ids = {source["id"] for source in source_catalog}
+    sanitized = []
+    if not isinstance(sections, list):
+        return sanitized
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        heading = section.get("heading")
+        if not isinstance(heading, str):
+            continue
+
+        text = section.get("text", "")
+        if not isinstance(text, str):
+            text = ""
+
+        raw_source_ids = section.get("source_ids", [])
+        if isinstance(raw_source_ids, str):
+            raw_source_ids = [raw_source_ids]
+        if not isinstance(raw_source_ids, list):
+            raw_source_ids = []
+
+        source_ids = []
+        for source_id in raw_source_ids:
+            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
+                source_ids.append(source_id)
+
+        bullets = []
+        raw_bullets = section.get("bullets", [])
+        if isinstance(raw_bullets, list):
+            for bullet in raw_bullets:
+                if isinstance(bullet, str):
+                    bullet_text = bullet
+                    bullet_raw_source_ids = []
+                elif isinstance(bullet, dict):
+                    bullet_text = bullet.get("text")
+                    bullet_raw_source_ids = bullet.get("source_ids", [])
+                else:
+                    continue
+
+                if not isinstance(bullet_text, str):
+                    continue
+                if isinstance(bullet_raw_source_ids, str):
+                    bullet_raw_source_ids = [bullet_raw_source_ids]
+                if not isinstance(bullet_raw_source_ids, list):
+                    bullet_raw_source_ids = []
+
+                bullet_source_ids = []
+                for source_id in bullet_raw_source_ids:
+                    if isinstance(source_id, str) and source_id in valid_ids and source_id not in bullet_source_ids:
+                        bullet_source_ids.append(source_id)
+
+                bullets.append(
+                    {
+                        "text": bullet_text,
+                        "source_ids": bullet_source_ids,
+                    }
+                )
+
+        sanitized.append(
+            {
+                "heading": heading,
+                "text": text,
+                "source_ids": source_ids,
+                "bullets": bullets,
             }
         )
     return sanitized

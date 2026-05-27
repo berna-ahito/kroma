@@ -19,6 +19,7 @@ from rag import (  # noqa: E402
     build_source_linked_context,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
+    sanitize_summary_source_ids,
     should_show_sources,
 )
 
@@ -120,6 +121,35 @@ QUIZ_QUESTIONS = [
         "answer": "A",
         "explanation": "This question has no valid source ID.",
         "source_ids": ["s404"],
+    },
+]
+
+
+SUMMARY_SECTIONS = [
+    {
+        "heading": "Overview",
+        "text": "Kroma summarizes local documents.",
+        "source_ids": ["s1", "sample.pdf", "s999", "s1"],
+        "source": "model-fake.pdf",
+        "page": 999,
+        "preview": "model-generated preview",
+        "bullets": [],
+    },
+    {
+        "heading": "Key Topics",
+        "text": "",
+        "source_ids": ["s404"],
+        "bullets": [
+            {
+                "text": "Local RAG",
+                "source_ids": ["s2", "other.pdf", "s404", "s2"],
+                "source": "model-fake.pdf",
+            },
+            {
+                "text": "Unsupported topic",
+                "source_ids": ["s404"],
+            },
+        ],
     },
 ]
 
@@ -241,6 +271,28 @@ def main() -> int:
         print("FAIL: quiz with no valid source stays unsourced")
     else:
         print("PASS: quiz with no valid source stays unsourced")
+
+    sanitized_summary = sanitize_summary_source_ids(SUMMARY_SECTIONS, catalog)
+    if sanitized_summary[0] != {
+        "heading": "Overview",
+        "text": "Kroma summarizes local documents.",
+        "source_ids": ["s1"],
+        "bullets": [],
+    }:
+        failures.append(("summary invalid section source_ids stripped", ["s1"], sanitized_summary[0]))
+        print("FAIL: summary invalid section source_ids stripped")
+    else:
+        print("PASS: summary invalid section source_ids stripped")
+
+    expected_bullets = [
+        {"text": "Local RAG", "source_ids": ["s2"]},
+        {"text": "Unsupported topic", "source_ids": []},
+    ]
+    if sanitized_summary[1]["source_ids"] != [] or sanitized_summary[1]["bullets"] != expected_bullets:
+        failures.append(("summary invalid bullet source_ids stripped", expected_bullets, sanitized_summary[1]))
+        print("FAIL: summary invalid bullet source_ids stripped")
+    else:
+        print("PASS: summary invalid bullet source_ids stripped")
 
     linked_context = build_source_linked_context(
         "[Source: sample.pdf, page 2]\nKroma is local.\n\n[Source: other.pdf, page 5]\nOther text.",

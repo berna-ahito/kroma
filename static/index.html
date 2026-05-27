@@ -2042,7 +2042,7 @@
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.detail || 'Failed to summarize', 'error'); return; }
-      showSummary(data.summary);
+      showSummary(data.summary, data.sources || []);
       showToast('Summary ready!', 'success');
     } catch(e) {
       showToast('Something went wrong', 'error');
@@ -2052,7 +2052,48 @@
     btn.textContent = '📋 Summarize';
   }
 
-  function showSummary(text) {
+  function renderSummarySources(sourceList, sourceIds, sourceCatalog) {
+    sourceList.innerHTML = '';
+    const ids = Array.isArray(sourceIds) ? sourceIds : [];
+    const validSources = ids
+      .map(id => sourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
+  }
+
+  function showSummary(summary, sources = []) {
     const wrapper = document.getElementById('chatWrapper');
     wrapper.style.cssText = '';
     wrapper.innerHTML = '';
@@ -2071,7 +2112,62 @@
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.style.cssText = 'max-width:100%;';
-    bubble.innerHTML = marked.parse(text);
+
+    const sourceCatalog = new Map(
+      (Array.isArray(sources) ? sources : [])
+        .filter(source => source?.id)
+        .map(source => [source.id, source])
+    );
+    const sections = Array.isArray(summary?.sections)
+      ? summary.sections
+      : [{ heading: 'Summary', text: typeof summary === 'string' ? summary : '', source_ids: [], bullets: [] }];
+
+    sections.forEach(section => {
+      const sectionEl = document.createElement('section');
+      sectionEl.style.cssText = 'margin-bottom:1.25rem;';
+
+      const heading = document.createElement('h2');
+      heading.textContent = section?.heading || 'Summary';
+      sectionEl.appendChild(heading);
+
+      if (section?.text) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = section.text;
+        sectionEl.appendChild(paragraph);
+
+        const sourceList = document.createElement('div');
+        sourceList.className = 'sources';
+        renderSummarySources(sourceList, section.source_ids, sourceCatalog);
+        sectionEl.appendChild(sourceList);
+      }
+
+      const bullets = Array.isArray(section?.bullets) ? section.bullets : [];
+      if (bullets.length) {
+        const list = document.createElement('ul');
+        bullets.forEach(bullet => {
+          const item = document.createElement('li');
+          const text = document.createElement('span');
+          text.textContent = bullet?.text || '';
+          item.appendChild(text);
+
+          const sourceList = document.createElement('div');
+          sourceList.className = 'sources';
+          renderSummarySources(sourceList, bullet?.source_ids, sourceCatalog);
+          item.appendChild(sourceList);
+          list.appendChild(item);
+        });
+        sectionEl.appendChild(list);
+      }
+
+      if (!section?.text && !bullets.length) {
+        const sourceList = document.createElement('div');
+        sourceList.className = 'sources';
+        renderSummarySources(sourceList, section?.source_ids, sourceCatalog);
+        sectionEl.appendChild(sourceList);
+      }
+
+      bubble.appendChild(sectionEl);
+    });
 
     content.appendChild(bubble);
     wrapper.appendChild(content);
