@@ -54,6 +54,14 @@ CASES = [
         "expected": False,
     },
     {
+        "name": "not-mentioned answer hides sources",
+        "question": "What is Bernadeth's GPA?",
+        "answer": "Bernadeth's GPA is not mentioned.",
+        "context": "[Source: sample.pdf, page 2]\nBernadeth studied computer science.",
+        "sources": [SOURCE],
+        "expected": False,
+    },
+    {
         "name": "grounded document answer shows sources",
         "question": "What is Kroma?",
         "answer": "Kroma is a local document-RAG assistant.",

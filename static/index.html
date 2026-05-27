@@ -553,6 +553,46 @@
     gap: 0.45rem;
   }
 
+  .source-summary {
+    margin-top: 0.55rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-3);
+    font-size: 0.76rem;
+  }
+
+  .source-summary-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .source-toggle,
+  .source-show-all {
+    background: none;
+    border: none;
+    color: var(--gold);
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.76rem;
+    font-weight: 700;
+    padding: 0.1rem 0.15rem;
+  }
+
+  .source-toggle:hover,
+  .source-show-all:hover {
+    color: #f59e0b;
+  }
+
+  .chat-sources {
+    margin-top: 0.35rem;
+  }
+
   .source-tag {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -1307,6 +1347,113 @@
     el.style.height = Math.min(el.scrollHeight, 140) + 'px';
   }
 
+  const CHAT_SOURCE_PREVIEW_LIMIT = 3;
+  let chatSourceDisclosureId = 0;
+
+  function formatSourcePage(source) {
+    return source?.page !== undefined && source?.page !== null && source.page !== ''
+      ? ` p.${source.page}`
+      : '';
+  }
+
+  function formatSourceSummary(sources) {
+    const first = sources[0] || {};
+    const filename = first?.source || 'Unknown source';
+    const firstLocation = `${filename}${formatSourcePage(first)}`;
+    const uniqueLocations = new Set(
+      sources.map(source => `${source?.source || 'Unknown source'}${formatSourcePage(source)}`)
+    );
+    const more = uniqueLocations.size > 1 ? ` + ${uniqueLocations.size - 1} more` : '';
+    const chunks = sources.length === 1 ? '1 chunk' : `${sources.length} chunks`;
+    return `${firstLocation}${more} · ${chunks}`;
+  }
+
+  function createSourceCard(source) {
+    const item = document.createElement('div');
+    item.className = 'source-tag';
+
+    const meta = document.createElement('div');
+    meta.className = 'source-meta';
+    const filename = source?.source || 'Unknown source';
+    const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+    const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+    meta.textContent = `${filename} • ${page} • Relevance ${score}`;
+    item.appendChild(meta);
+
+    if (source?.preview) {
+      const preview = document.createElement('div');
+      preview.className = 'source-preview';
+      preview.textContent = source.preview;
+      item.appendChild(preview);
+    }
+
+    return item;
+  }
+
+  function appendChatSources(bubble, sources) {
+    const detailId = `chatSources-${++chatSourceDisclosureId}`;
+
+    const summary = document.createElement('div');
+    summary.className = 'source-summary';
+
+    const summaryText = document.createElement('span');
+    summaryText.className = 'source-summary-text';
+    summaryText.textContent = `Sources: ${formatSourceSummary(sources)}`;
+    summary.appendChild(summaryText);
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'source-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', detailId);
+    toggle.setAttribute('aria-label', `Show source details for ${sources.length} ${sources.length === 1 ? 'chunk' : 'chunks'}`);
+    toggle.textContent = 'Show details';
+    summary.appendChild(toggle);
+
+    const sourceList = document.createElement('div');
+    sourceList.className = 'sources chat-sources';
+    sourceList.id = detailId;
+    sourceList.hidden = true;
+
+    sources.forEach((source, index) => {
+      const item = createSourceCard(source);
+      if (index >= CHAT_SOURCE_PREVIEW_LIMIT) item.hidden = true;
+      sourceList.appendChild(item);
+    });
+
+    if (sources.length > CHAT_SOURCE_PREVIEW_LIMIT) {
+      const showAll = document.createElement('button');
+      showAll.type = 'button';
+      showAll.className = 'source-show-all';
+      showAll.setAttribute('aria-expanded', 'false');
+      showAll.setAttribute('aria-controls', detailId);
+      showAll.setAttribute('aria-label', `Show all ${sources.length} source cards`);
+      showAll.textContent = 'Show all sources';
+      showAll.onclick = () => {
+        sourceList.querySelectorAll('.source-tag[hidden]').forEach(item => { item.hidden = false; });
+        showAll.setAttribute('aria-expanded', 'true');
+        showAll.remove();
+      };
+      sourceList.appendChild(showAll);
+    }
+
+    toggle.onclick = () => {
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      sourceList.hidden = expanded;
+      toggle.setAttribute('aria-expanded', String(!expanded));
+      toggle.setAttribute(
+        'aria-label',
+        expanded
+          ? `Show source details for ${sources.length} ${sources.length === 1 ? 'chunk' : 'chunks'}`
+          : 'Hide source details'
+      );
+      toggle.textContent = expanded ? 'Show details' : 'Hide details';
+    };
+
+    bubble.appendChild(summary);
+    bubble.appendChild(sourceList);
+  }
+
   function appendMessage(role, text, sources = []) {
     const wrapper = document.getElementById('chatWrapper');
     const empty = document.getElementById('emptyState');
@@ -1324,32 +1471,7 @@
     renderSafeMarkdown(bubble, text);
 
     if (role !== 'user' && Array.isArray(sources) && sources.length > 0) {
-      const sourceList = document.createElement('div');
-      sourceList.className = 'sources';
-
-      sources.forEach(source => {
-        const item = document.createElement('div');
-        item.className = 'source-tag';
-
-        const meta = document.createElement('div');
-        meta.className = 'source-meta';
-        const filename = source?.source || 'Unknown source';
-        const page = source?.page ? `Page ${source.page}` : 'Page unknown';
-        const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-        meta.textContent = `${filename} • ${page} • Relevance ${score}`;
-        item.appendChild(meta);
-
-        if (source?.preview) {
-          const preview = document.createElement('div');
-          preview.className = 'source-preview';
-          preview.textContent = source.preview;
-          item.appendChild(preview);
-        }
-
-        sourceList.appendChild(item);
-      });
-
-      bubble.appendChild(sourceList);
+      appendChatSources(bubble, sources);
     }
 
     msg.appendChild(avatar);

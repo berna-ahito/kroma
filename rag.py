@@ -32,6 +32,8 @@ SMALL_TALK_RE = re.compile(
 
 UNGROUNDED_ANSWER_RE = re.compile(
     r"("
+    r"\bnot\s+(mentioned|provided|available|stated)\b|"
+    r"\b(does\s+not|doesn.?t|do\s+not|don.?t)\s+mention\b|"
     r"not\s+(mentioned|provided|contained|included|stated|specified|found|available)\s+in\s+(the\s+)?((provided|supplied)\s+)?(documents?|context)|"
     r"(documents?|context)\s+(does\s+not|doesn.?t|do\s+not|don.?t)\s+(mention|provide|contain|include|state|specify)|"
     r"(provided|supplied)\s+(documents?|context)\s+(does\s+not|doesn.?t|do\s+not|don.?t)\s+(mention|provide|contain|include|state|specify)|"
