@@ -11,14 +11,15 @@ AI that reads your documents, not the internet. Ask questions, generate flashcar
 
 Most people drown in documents — reports, lecture slides, research papers. They highlight. They re-read. They still miss things.
 
-Kroma flips that. Upload your files, ask your question, get a direct answer sourced from your actual documents. No hallucination. No internet noise.
+Kroma flips that. Upload your files, ask your question, and get an answer grounded in retrieved chunks from your actual documents, with sources shown in the app.
 
 | Feature | Description |
 |---|---|
-| 💬 Document Chat | Ask anything. Answers sourced only from your uploaded files |
-| ⚡ Flashcard Generator | Auto-generate Q&A cards from any document |
+| 💬 Document Chat | Ask questions and get answers grounded in retrieved chunks from uploaded files |
+| ⚡ Flashcard Generator | Auto-generate Q&A cards with source links when available |
 | 🧠 Quiz Mode | AI-generated multiple choice questions — Easy, Medium, or Hard |
 | 📋 Smart Summary | One-click structured summary with key topics and takeaways |
+| 🎯 Source Cards | See retrieved chunks, pages, and relevance scores behind answers |
 | 🎯 Source Filtering | Choose exactly which documents to query |
 | ↓ Export to PDF | Save your full chat session as a clean PDF |
 
@@ -49,7 +50,9 @@ User Question → Semantic Search → Top K Chunks → Groq (Llama 4 Scout) → 
 2. Embeddings are stored in ChromaDB (local vector database)
 3. When you ask a question, ChromaDB finds the most semantically similar chunks
 4. Those chunks are sent to Groq as context
-5. Groq answers based only on your document content
+5. Groq answers from the retrieved context, and the app shows the source chunks used
+
+Uploads are limited to PDF files up to 25 MB each.
 
 ---
 
@@ -57,27 +60,35 @@ User Question → Semantic Search → Top K Chunks → Groq (Llama 4 Scout) → 
 
 **Prerequisites:** Python 3.10+, Groq API key
 
-```bash
+```powershell
 # Clone the repo
 git clone https://github.com/berna-ahito/kroma.git
 cd kroma
 
 # Create virtual environment
-python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Mac/Linux
+py -m venv venv
+.\venv\Scripts\Activate.ps1
 
 # Install dependencies
-pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Create .env file and add your Groq API key
-# GROQ_API_KEY=your_key_here
+# Create .env from the example, then add your Groq API key
+Copy-Item .env.example .env
+notepad .env
 
 # Run the app
-uvicorn api:app --reload --port 8000
+.\venv\Scripts\python.exe -m uvicorn api:app --reload --port 8000
 ```
 
 Visit `http://localhost:8000` for the landing page and `http://localhost:8000/app` for the app.
+
+Hosted demos on free tiers may take a short cold start after inactivity.
+
+## Running evals
+
+```powershell
+.\venv\Scripts\python.exe evals\trust_behavior.py
+```
 
 ---
 
@@ -103,7 +114,7 @@ This is Build 1 of my AI engineering portfolio. I am a 4th-year BSIT student at 
 
 Kroma demonstrates:
 - End-to-end RAG pipeline implementation from scratch
-- FastAPI backend with file handling and streaming
+- FastAPI backend with PDF file handling and JSON API responses
 - Vector database integration with ChromaDB
 - LLM integration via Groq API
 - Clean product thinking — landing page, features, UX

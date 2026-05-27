@@ -21,6 +21,28 @@ CHROMA_PATH = BASE_DIR / "chroma_db"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 
+SMALL_TALK_RE = re.compile(
+    r"^\s*("
+    r"hi|hello|hey|yo|howdy|good\s+(morning|afternoon|evening)|"
+    r"thanks|thank\s+you|thx|ok|okay|cool|great|nice|bye|goodbye|"
+    r"how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do"
+    r")\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+UNGROUNDED_ANSWER_RE = re.compile(
+    r"("
+    r"not\s+(mentioned|provided|contained|included|stated|specified|found|available)\s+in\s+(the\s+)?((provided|supplied)\s+)?(documents?|context)|"
+    r"(documents?|context)\s+(does\s+not|doesn.?t|do\s+not|don.?t)\s+(mention|provide|contain|include|state|specify)|"
+    r"(provided|supplied)\s+(documents?|context)\s+(does\s+not|doesn.?t|do\s+not|don.?t)\s+(mention|provide|contain|include|state|specify)|"
+    r"answer\s+is\s+not\s+in\s+(the\s+)?documents?|"
+    r"no\s+relevant\s+information|"
+    r"i\s+(do\s+not|don.?t|cannot|can.?t)\s+(see|find)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _emit(progress_callback: Callable | None, event: str, payload: dict | None = None) -> None:
     if progress_callback:
         progress_callback(event, payload or {})
@@ -111,6 +133,22 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     return "\n\n".join(context_parts), sources
 
 
+def should_show_sources(question: str, answer: str, context: str, sources: list) -> bool:
+    """
+    Lightweight display guard for source cards.
+
+    This is a deterministic UI safety check, not a full faithfulness evaluator
+    or hallucination-prevention system.
+    """
+    if not context.strip() or not sources:
+        return False
+    if SMALL_TALK_RE.search(question or ""):
+        return False
+    if UNGROUNDED_ANSWER_RE.search(answer or ""):
+        return False
+    return True
+
+
 def _groq_client() -> Groq:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -174,12 +212,20 @@ def query_documents(question: str, chat_history: list | None = None, n_results: 
     return answer, sources
 
 
-def generate_quiz(context: str, difficulty: str = "medium", count: int = 8) -> list:
+def generate_quiz(context: str, difficulty: str = "medium", count: int = 8, source_ids: list | None = None) -> list:
     difficulty_instruction = {
         "easy": "Questions must be simple recall — 'What is X?' or 'What does X do?' format. Wrong answer choices must be obviously incorrect.",
         "medium": "Questions must require understanding — 'Why would you use X?' or 'What happens when Y?'. Wrong choices must be plausible but clearly incorrect on reflection.",
         "hard": "Questions must require inference and cross-concept reasoning — combining two or more ideas, edge cases, or 'what would happen if' scenarios. All wrong choices must be believable and tricky."
     }.get(difficulty, "medium")
+    allowed_source_ids = source_ids or []
+    source_instruction = ""
+    if allowed_source_ids:
+        source_instruction = (
+            f" Each question may include source_ids using only these IDs: {', '.join(allowed_source_ids)}. "
+            "Use an empty source_ids array if no supplied source directly supports the explanation. "
+            "Do not include filenames, page numbers, previews, or any source metadata."
+        )
 
     messages = [
         {
@@ -187,9 +233,10 @@ def generate_quiz(context: str, difficulty: str = "medium", count: int = 8) -> l
             "content": (
                 f"You are a quiz generator. Given document context, generate exactly {count} multiple choice questions. "
                 "Respond ONLY with a valid JSON array, no markdown, no explanation, no backticks. "
-                "Format: [{\"question\": \"...\", \"choices\": [\"A. ...\", \"B. ...\", \"C. ...\", \"D. ...\"], \"answer\": \"A\", \"explanation\": \"...\"}, ...] "
+                "Format: [{\"question\": \"...\", \"choices\": [\"A. ...\", \"B. ...\", \"C. ...\", \"D. ...\"], \"answer\": \"A\", \"explanation\": \"...\", \"source_ids\": [\"s1\"]}, ...] "
                 "The answer field must be just the letter A, B, C, or D. "
                 f"Difficulty level: {difficulty}. {difficulty_instruction}"
+                f"{source_instruction}"
             )
         },
         {
@@ -274,16 +321,130 @@ def generate_suggestions(context: str) -> list:
                 pass
         return []
 
-def generate_flashcards(context: str, count: int = 8) -> list:
+def build_source_catalog(sources: list) -> list:
+    catalog = []
+    for index, source in enumerate(sources, start=1):
+        catalog.append(
+            {
+                "id": f"s{index}",
+                "source": source.get("source", "unknown"),
+                "page": source.get("page"),
+                "score": source.get("score"),
+                "preview": source.get("preview", ""),
+            }
+        )
+    return catalog
+
+
+def build_source_linked_context(context: str, source_catalog: list) -> str:
+    chunks = re.split(r"\n\n(?=\[Source: )", context)
+    linked_parts = []
+    for source, chunk in zip(source_catalog, chunks):
+        body = re.sub(r"^\[Source:[^\n]*\]\n", "", chunk, count=1)
+        linked_parts.append(f"[Source ID: {source['id']}]\n{body}")
+    return "\n\n".join(linked_parts)
+
+
+def sanitize_flashcards_source_ids(cards: list, source_catalog: list) -> list:
+    valid_ids = {source["id"] for source in source_catalog}
+    sanitized = []
+    if not isinstance(cards, list):
+        return sanitized
+
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        question = card.get("question")
+        answer = card.get("answer")
+        if not isinstance(question, str) or not isinstance(answer, str):
+            continue
+
+        raw_source_ids = card.get("source_ids", [])
+        if isinstance(raw_source_ids, str):
+            raw_source_ids = [raw_source_ids]
+        if not isinstance(raw_source_ids, list):
+            raw_source_ids = []
+
+        source_ids = []
+        for source_id in raw_source_ids:
+            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
+                source_ids.append(source_id)
+
+        sanitized.append(
+            {
+                "question": question,
+                "answer": answer,
+                "source_ids": source_ids,
+            }
+        )
+    return sanitized
+
+
+def sanitize_quiz_source_ids(questions: list, source_catalog: list) -> list:
+    valid_ids = {source["id"] for source in source_catalog}
+    sanitized = []
+    if not isinstance(questions, list):
+        return sanitized
+
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        question_text = question.get("question")
+        choices = question.get("choices")
+        answer = question.get("answer")
+        explanation = question.get("explanation")
+        if (
+            not isinstance(question_text, str)
+            or not isinstance(choices, list)
+            or not all(isinstance(choice, str) for choice in choices)
+            or not isinstance(answer, str)
+            or not isinstance(explanation, str)
+        ):
+            continue
+
+        raw_source_ids = question.get("source_ids", [])
+        if isinstance(raw_source_ids, str):
+            raw_source_ids = [raw_source_ids]
+        if not isinstance(raw_source_ids, list):
+            raw_source_ids = []
+
+        source_ids = []
+        for source_id in raw_source_ids:
+            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
+                source_ids.append(source_id)
+
+        sanitized.append(
+            {
+                "question": question_text,
+                "choices": choices,
+                "answer": answer,
+                "explanation": explanation,
+                "source_ids": source_ids,
+            }
+        )
+    return sanitized
+
+
+def generate_flashcards(context: str, count: int = 8, source_ids: list | None = None) -> list:
+    allowed_source_ids = source_ids or []
+    source_instruction = ""
+    if allowed_source_ids:
+        source_instruction = (
+            f" Each flashcard may include source_ids using only these IDs: {', '.join(allowed_source_ids)}. "
+            "Use an empty source_ids array if no supplied source directly supports the flashcard. "
+            "Do not include filenames, page numbers, previews, or any source metadata."
+        )
+
     messages = [
         {
             "role": "system",
             "content": (
                 f"You are a flashcard generator. Given document context, generate exactly {count} flashcards. "
                 "Respond ONLY with a valid JSON array, no markdown, no explanation, no backticks, no trailing commas. "
-                "Format: [{\"question\": \"...\", \"answer\": \"...\"}, ...] "
+                "Format: [{\"question\": \"...\", \"answer\": \"...\", \"source_ids\": [\"s1\"]}, ...] "
                 "Questions should test understanding, not just recall. Keep answers concise under 2 sentences. "
                 "Ensure all strings are properly escaped and the JSON is valid."
+                f"{source_instruction}"
             )
         },
         {

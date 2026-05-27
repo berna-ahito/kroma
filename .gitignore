@@ -3,6 +3,16 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# OS/editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
 # C extensions
 *.so
 
@@ -208,6 +218,15 @@ tempCodeRunnerFile.py
 
 # PyPI configuration file
 .pypirc
+
+# Kroma local runtime/generated data
+docs/
+chroma_db/
+chroma_db_next/
+index_stats.json
+graphify-out/
+CLAUDE.local.md
+.claude/settings.local.json
 
 # Marimo
 marimo/_static/

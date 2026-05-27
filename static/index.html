@@ -548,19 +548,31 @@
     padding-top: 0.6rem;
     border-top: 1px solid var(--border);
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
+    flex-direction: column;
+    gap: 0.45rem;
   }
 
   .source-tag {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 0.18rem 0.55rem;
-    font-size: 0.7rem;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.72rem;
     color: var(--text-3);
+  }
+
+  .source-meta {
+    color: var(--text-2);
     font-family: 'DM Mono', monospace;
-    letter-spacing: -0.01em;
+    font-size: 0.7rem;
+    line-height: 1.4;
+  }
+
+  .source-preview {
+    margin-top: 0.3rem;
+    color: var(--text-3);
+    font-size: 0.78rem;
+    line-height: 1.45;
   }
 
   /* THINKING */
@@ -802,6 +814,8 @@
     background: #1c1200;
     border: 1px solid var(--gold-soft);
     transform: rotateY(180deg);
+    justify-content: flex-start;
+    overflow-y: auto;
   }
 
   .flashcard-label {
@@ -823,6 +837,12 @@
   }
 
   .flashcard-back .flashcard-text { color: var(--cream); }
+
+  .flashcard-back .sources {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    width: 100%;
+  }
 
   /* QUIZ */
   .quiz-wrapper {
@@ -1060,7 +1080,7 @@
     <input type="file" id="fileInput" accept=".pdf" multiple>
     <span class="upload-icon">📄</span>
     <span class="upload-title">Click or drag to upload</span>
-    <span class="upload-hint">PDF files only · 200MB max</span>
+    <span class="upload-hint">PDF files only · 25MB max</span>
   </label>
 
   <button class="btn-primary" id="processBtn" onclick="processDocuments()">
@@ -1263,7 +1283,7 @@
       });
       const data = await res.json();
       thinking.remove();
-      appendMessage('ai', data.answer, []);
+      appendMessage('ai', data.answer, data.show_sources ? (data.sources || []) : []);
       chatHistory.push({ role: 'assistant', content: data.answer });
     document.getElementById('exportBtn').style.display = 'block';
     } catch(e) {
@@ -1297,6 +1317,35 @@
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.innerHTML = marked.parse(text);
+
+    if (role !== 'user' && Array.isArray(sources) && sources.length > 0) {
+      const sourceList = document.createElement('div');
+      sourceList.className = 'sources';
+
+      sources.forEach(source => {
+        const item = document.createElement('div');
+        item.className = 'source-tag';
+
+        const meta = document.createElement('div');
+        meta.className = 'source-meta';
+        const filename = source?.source || 'Unknown source';
+        const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+        const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+        meta.textContent = `${filename} • ${page} • Relevance ${score}`;
+        item.appendChild(meta);
+
+        if (source?.preview) {
+          const preview = document.createElement('div');
+          preview.className = 'source-preview';
+          preview.textContent = source.preview;
+          item.appendChild(preview);
+        }
+
+        sourceList.appendChild(item);
+      });
+
+      bubble.appendChild(sourceList);
+    }
 
     msg.appendChild(avatar);
     msg.appendChild(bubble);
@@ -1424,6 +1473,7 @@
 
   let quizData = [];
   let quizAnswers = {};
+  let quizSourceCatalog = new Map();
 
   async function generateQuiz(difficulty = null, count = null) {
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
@@ -1447,7 +1497,12 @@
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
-      quizData = data.questions;
+      quizData = Array.isArray(data.questions) ? data.questions : [];
+      quizSourceCatalog = new Map(
+        (Array.isArray(data.sources) ? data.sources : [])
+          .filter(source => source?.id)
+          .map(source => [source.id, source])
+      );
       quizAnswers = {};
       showQuiz(quizData, difficulty);
       showToast('Quiz ready!', 'success');
@@ -1524,6 +1579,7 @@
   function showQuiz(questions, difficulty = 'medium') {
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
+    questions = Array.isArray(questions) ? questions : [];
 
     const header = document.createElement('div');
     header.className = 'quiz-header';
@@ -1542,17 +1598,42 @@
       qDiv.className = 'quiz-question';
       qDiv.id = `q-${i}`;
 
-      const choicesHTML = q.choices.map(c => {
-        const letter = c.charAt(0);
-        return `<button class="quiz-choice" data-q="${i}" data-letter="${letter}" onclick="selectAnswer(${i}, '${letter}', this)">${c}</button>`;
-      }).join('');
+      const qNum = document.createElement('div');
+      qNum.className = 'quiz-q-num';
+      qNum.textContent = `Question ${i + 1} of ${questions.length}`;
 
-      qDiv.innerHTML = `
-        <div class="quiz-q-num">Question ${i + 1} of ${questions.length}</div>
-        <div class="quiz-q-text">${q.question}</div>
-        <div class="quiz-choices">${choicesHTML}</div>
-        <div class="quiz-explanation" id="exp-${i}">💡 ${q.explanation}</div>
-      `;
+      const qText = document.createElement('div');
+      qText.className = 'quiz-q-text';
+      qText.textContent = q?.question || '';
+
+      const choices = document.createElement('div');
+      choices.className = 'quiz-choices';
+      (Array.isArray(q?.choices) ? q.choices : []).forEach(c => {
+        const letter = (c || '').charAt(0).toUpperCase();
+        const choiceBtn = document.createElement('button');
+        choiceBtn.className = 'quiz-choice';
+        choiceBtn.dataset.q = String(i);
+        choiceBtn.dataset.letter = letter;
+        choiceBtn.textContent = c;
+        choiceBtn.onclick = () => selectAnswer(i, letter, choiceBtn);
+        choices.appendChild(choiceBtn);
+      });
+
+      const explanation = document.createElement('div');
+      explanation.className = 'quiz-explanation';
+      explanation.id = `exp-${i}`;
+      const explanationText = document.createElement('div');
+      explanationText.textContent = `💡 ${q?.explanation || ''}`;
+      explanation.appendChild(explanationText);
+      const sourceList = document.createElement('div');
+      sourceList.className = 'sources';
+      sourceList.id = `quizSources-${i}`;
+      explanation.appendChild(sourceList);
+
+      qDiv.appendChild(qNum);
+      qDiv.appendChild(qText);
+      qDiv.appendChild(choices);
+      qDiv.appendChild(explanation);
       qWrapper.appendChild(qDiv);
     });
 
@@ -1593,6 +1674,7 @@
         if (c.dataset.letter === selected && selected !== correct) c.classList.add('wrong');
       });
 
+      renderQuizSources(q, i);
       document.getElementById(`exp-${i}`).classList.add('show');
       if (selected === correct) score++;
     });
@@ -1613,6 +1695,50 @@
     `;
     document.getElementById('quizWrapper').appendChild(scoreDiv);
     scoreDiv.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderQuizSources(question, index) {
+    const sourceList = document.getElementById(`quizSources-${index}`);
+    if (!sourceList) return;
+    sourceList.innerHTML = '';
+
+    const sourceIds = Array.isArray(question?.source_ids) ? question.source_ids : [];
+    const validSources = sourceIds
+      .map(id => quizSourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
   }
 
   // ── HISTORY ──────────────────────────────────────────────────────────
@@ -1700,7 +1826,7 @@
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
-      showFlashcards(data.flashcards);
+      showFlashcards(data.flashcards, data.sources || []);
       showToast('Flashcards ready!', 'success');
     } catch(e) {
       showToast('Something went wrong', 'error');
@@ -1766,9 +1892,19 @@
 
   let flashcardIndex = 0;
   let flashcardData = [];
+  let flashcardSourceCatalog = new Map();
 
-  function showFlashcards(cards) {
-    flashcardData = cards;
+  function showFlashcards(cards, sources = []) {
+    flashcardData = Array.isArray(cards) ? cards : [];
+    flashcardSourceCatalog = new Map(
+      (Array.isArray(sources) ? sources : [])
+        .filter(source => source?.id)
+        .map(source => [source.id, source])
+    );
+    if (!flashcardData.length) {
+      showToast('No flashcards generated', 'error');
+      return;
+    }
     flashcardIndex = 0;
 
     const wrapper = document.getElementById('chatWrapper');
@@ -1784,7 +1920,7 @@
     nav.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:100%;max-width:680px;padding:0 1rem;';
     nav.innerHTML = `
       <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex:none;">← Back to chat</button>
-      <span id="fcCounter" style="font-size:0.85rem;color:var(--text-3);">1 / ${cards.length}</span>
+      <span id="fcCounter" style="font-size:0.85rem;color:var(--text-3);">1 / ${flashcardData.length}</span>
       <span style="font-size:0.75rem;color:var(--text-3);">Click card to flip</span>
     `;
     wrapper.appendChild(nav);
@@ -1813,19 +1949,66 @@
         <div class="flashcard-inner">
           <div class="flashcard-front">
             <div class="flashcard-label" style="font-size:1.2rem;">Question ${flashcardIndex + 1} of ${flashcardData.length}</div>
-            <div class="flashcard-text" style="font-size:1.25rem;">${card.question}</div>
+            <div class="flashcard-text" id="fcQuestionText" style="font-size:1.25rem;"></div>
           </div>
           <div class="flashcard-back">
             <div class="flashcard-label">Answer</div>
-            <div class="flashcard-text" style="font-size:1.15rem;">${card.answer}</div>
+            <div class="flashcard-text" id="fcAnswerText" style="font-size:1.15rem;"></div>
+            <div class="sources" id="fcSources"></div>
           </div>
         </div>
       </div>
     `;
+    document.getElementById('fcQuestionText').textContent = card?.question || '';
+    document.getElementById('fcAnswerText').textContent = card?.answer || '';
+    renderFlashcardSources(card);
     document.getElementById('currentCard').addEventListener('click', () => {
       document.getElementById('currentCard').classList.toggle('flipped');
     });
     document.getElementById('fcCounter').textContent = `${flashcardIndex + 1} / ${flashcardData.length}`;
+  }
+
+  function renderFlashcardSources(card) {
+    const sourceList = document.getElementById('fcSources');
+    sourceList.innerHTML = '';
+
+    const sourceIds = Array.isArray(card?.source_ids) ? card.source_ids : [];
+    const validSources = sourceIds
+      .map(id => flashcardSourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const page = source?.page ? `Page ${source.page}` : 'Page unknown';
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${page} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
   }
 
   function nextCard() {

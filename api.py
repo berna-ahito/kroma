@@ -1,6 +1,8 @@
 import json
+import re
 import shutil
-from pathlib import Path
+import uuid
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -8,12 +10,31 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from ingest import CHROMA_PATH, DOCS_FOLDER, STATS_FILE, ingest_documents, load_index_stats
-from rag import generate_answer, retrieve_chunks, generate_flashcards, generate_quiz, generate_suggestions, generate_summary
+from rag import (
+    build_source_catalog,
+    build_source_linked_context,
+    generate_answer,
+    generate_flashcards,
+    generate_quiz,
+    generate_suggestions,
+    generate_summary,
+    retrieve_chunks,
+    sanitize_flashcards_source_ids,
+    sanitize_quiz_source_ids,
+    should_show_sources,
+)
 
 app = FastAPI()
 
 DOCS_FOLDER.mkdir(exist_ok=True)
-HISTORY_FILE = Path("chat_history.json")
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+PDF_HEADER = b"%PDF-"
+SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
 
 
 # ── Models ──────────────────────────────────────────────────────────────────
@@ -22,6 +43,67 @@ class ChatRequest(BaseModel):
     question: str
     history: list = []
     selected_docs: list = []
+
+
+def _upload_error(status_code: int, message: str):
+    raise HTTPException(status_code=status_code, detail=message)
+
+
+def _safe_upload_filename(filename: str) -> str:
+    if not filename:
+        _upload_error(400, "Upload must include a filename.")
+    if "\x00" in filename or any(ord(ch) < 32 for ch in filename):
+        _upload_error(400, "Filename contains invalid characters.")
+    # Reject client-supplied paths before deriving a storage name.
+    if filename != PurePosixPath(filename).name or filename != PureWindowsPath(filename).name:
+        _upload_error(400, "Filename must not include path separators.")
+    if PurePosixPath(filename).suffix.lower() != ".pdf":
+        _upload_error(415, "Only .pdf files are supported.")
+
+    stem = filename[:-4].strip(" ._-")
+    if not stem:
+        _upload_error(400, "Filename must include a valid name before .pdf.")
+
+    safe_stem = SAFE_FILENAME_RE.sub("_", stem).strip("._-")[:80] or "upload"
+    if safe_stem.upper() in WINDOWS_RESERVED_NAMES:
+        safe_stem = f"upload-{uuid.uuid4().hex[:8]}"
+    safe_name = f"{safe_stem}.pdf"
+    dest = DOCS_FOLDER / safe_name
+    if dest.exists():
+        safe_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}.pdf"
+    return safe_name
+
+
+def _delete_doc_target(filename: str) -> Path:
+    if not filename:
+        raise HTTPException(400, "Document filename is required.")
+    if "\x00" in filename or any(ord(ch) < 32 or ord(ch) == 127 for ch in filename):
+        raise HTTPException(400, "Filename contains invalid characters.")
+    if filename != PurePosixPath(filename).name or filename != PureWindowsPath(filename).name:
+        raise HTTPException(400, "Filename must not include path separators.")
+    if PurePosixPath(filename).is_absolute() or PureWindowsPath(filename).is_absolute():
+        raise HTTPException(400, "Filename must not be an absolute path.")
+    if PurePosixPath(filename).suffix.lower() != ".pdf":
+        raise HTTPException(415, "Only .pdf files can be deleted.")
+
+    docs_root = DOCS_FOLDER.resolve()
+    target = (DOCS_FOLDER / filename).resolve()
+    try:
+        target.relative_to(docs_root)
+    except ValueError:
+        raise HTTPException(400, "Invalid document path.")
+    return target
+
+
+async def _read_pdf_upload(file: UploadFile) -> bytes:
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if not data:
+        _upload_error(400, "Uploaded PDF is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        _upload_error(413, "PDF upload exceeds the 25 MB limit.")
+    if not data.startswith(PDF_HEADER):
+        _upload_error(415, "Uploaded file content is not a PDF.")
+    return data
     
 # ── Routes ──────────────────────────────────────────────────────────────────
 
@@ -37,12 +119,19 @@ def status():
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are supported.")
-    dest = DOCS_FOLDER / file.filename
-    with dest.open("wb") as f:
-        f.write(await file.read())
-    return {"filename": file.filename, "saved": True}
+    safe_name = _safe_upload_filename(file.filename or "")
+    data = await _read_pdf_upload(file)
+    dest = (DOCS_FOLDER / safe_name).resolve()
+    docs_root = DOCS_FOLDER.resolve()
+    # Defense-in-depth guard: stored uploads must remain inside docs/.
+    if docs_root not in [dest, *dest.parents]:
+        _upload_error(400, "Invalid upload destination.")
+    try:
+        with dest.open("wb") as f:
+            f.write(data)
+    except OSError:
+        _upload_error(500, "Could not save uploaded PDF.")
+    return {"filename": safe_name, "saved": True}
 
 
 @app.post("/api/process")
@@ -63,11 +152,18 @@ class FlashcardRequest(BaseModel):
 
 @app.post("/api/flashcards")
 def flashcards(req: FlashcardRequest):
-    context, _ = retrieve_chunks("generate flashcards summary overview key concepts", n_results=15, selected_docs=req.selected_docs)
+    context, sources = retrieve_chunks("generate flashcards summary overview key concepts", n_results=15, selected_docs=req.selected_docs)
     if not context:
         raise HTTPException(400, "No content to generate flashcards from.")
-    cards = generate_flashcards(context, count=req.count)
-    return {"flashcards": cards}
+    source_catalog = build_source_catalog(sources)
+    source_context = build_source_linked_context(context, source_catalog)
+    cards = generate_flashcards(
+        source_context,
+        count=req.count,
+        source_ids=[source["id"] for source in source_catalog],
+    )
+    cards = sanitize_flashcards_source_ids(cards, source_catalog)
+    return {"flashcards": cards, "sources": source_catalog}
 
 class QuizRequest(BaseModel):
     selected_docs: list = []
@@ -76,11 +172,19 @@ class QuizRequest(BaseModel):
 
 @app.post("/api/quiz")
 def quiz(req: QuizRequest):
-    context, _ = retrieve_chunks("key concepts definitions commands processes", n_results=15, selected_docs=req.selected_docs)
+    context, sources = retrieve_chunks("key concepts definitions commands processes", n_results=15, selected_docs=req.selected_docs)
     if not context:
         raise HTTPException(400, "No content to generate quiz from.")
-    questions = generate_quiz(context, difficulty=req.difficulty, count=req.count)
-    return {"questions": questions}
+    source_catalog = build_source_catalog(sources)
+    source_context = build_source_linked_context(context, source_catalog)
+    questions = generate_quiz(
+        source_context,
+        difficulty=req.difficulty,
+        count=req.count,
+        source_ids=[source["id"] for source in source_catalog],
+    )
+    questions = sanitize_quiz_source_ids(questions, source_catalog)
+    return {"questions": questions, "sources": source_catalog}
 
 class SuggestRequest(BaseModel):
     selected_docs: list = []
@@ -108,13 +212,14 @@ def suggest(req: SuggestRequest):
 def chat(req: ChatRequest):
     context, sources = retrieve_chunks(req.question, selected_docs=req.selected_docs)
     answer = generate_answer(req.question, context, req.history)
-    return {"answer": answer, "sources": sources}
+    show_sources = should_show_sources(req.question, answer, context, sources)
+    return {"answer": answer, "sources": sources, "show_sources": show_sources}
 
 
 @app.delete("/api/docs/{filename}")
 def delete_doc(filename: str):
-    target = DOCS_FOLDER / filename
-    if not target.exists():
+    target = _delete_doc_target(filename)
+    if not target.is_file():
         raise HTTPException(404, "File not found.")
     target.unlink()
     return {"deleted": filename}
