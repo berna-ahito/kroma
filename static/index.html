@@ -1235,6 +1235,7 @@
         const es = document.getElementById('emptyState');
         if (es) es.style.display = 'none';
         document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
+        if (chatHistory.length === 0) fetchSuggestions();
       } else {
         const wrapper = document.getElementById('chatWrapper');
         wrapper.innerHTML = `
@@ -1294,7 +1295,6 @@
         document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
         showToast('Ready — ask your first question', 'success');
         await init();
-        fetchSuggestions();
       } else {
         showToast(data.detail || 'Processing failed', 'error');
       }
@@ -1314,6 +1314,7 @@
 
     input.value = '';
     autoResize(input);
+    document.getElementById('suggestionsBar').style.display = 'none';
     appendMessage('user', question);
     chatHistory.push({ role: 'user', content: question });
 
@@ -1601,7 +1602,8 @@
     saveCurrentChat();
     chatHistory = [];
     document.getElementById('sendBtn').disabled = false;
-    document.getElementById('suggestionsBar').style.display = 'none';
+    if (isIndexed) fetchSuggestions();
+    else document.getElementById('suggestionsBar').style.display = 'none';
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
     if (!isIndexed) {
@@ -2362,6 +2364,10 @@
   function renderSuggestions(questions) {
     const bar = document.getElementById('suggestionsBar');
     const row = document.getElementById('suggestionsRow');
+    if (chatHistory.length > 0) {
+      bar.style.display = 'none';
+      return;
+    }
     row.innerHTML = '';
     questions.forEach(q => {
       const btn = document.createElement('button');
