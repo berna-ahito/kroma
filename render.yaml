@@ -6,3 +6,5 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: KROMA_DEMO_KEY
+        sync: false

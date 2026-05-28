@@ -20,6 +20,7 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 BASE_DIR = Path(__file__).resolve().parent
 CHROMA_PATH = BASE_DIR / "chroma_db"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+MISSING_CONTEXT_ANSWER = "That information was not found in the uploaded documents."
 
 
 SMALL_TALK_RE = re.compile(
@@ -75,6 +76,11 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         return "", []
 
     stats = load_index_stats() or {}
+    indexed_docs = {
+        doc.get("name")
+        for doc in stats.get("docs", [])
+        if isinstance(doc, dict) and doc.get("name")
+    }
     _emit(
         progress_callback,
         "prepare",
@@ -85,15 +91,26 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         },
     )
 
+    search_filter = None
+    if selected_docs:
+        requested_docs = {Path(name).name for name in selected_docs}
+        filtered_docs = sorted(requested_docs & indexed_docs) if indexed_docs else sorted(requested_docs)
+        if not filtered_docs:
+            _emit(progress_callback, "empty", {"message": "No selected documents are indexed."})
+            return "", []
+        search_filter = {"source": {"$in": filtered_docs}}
+    elif indexed_docs:
+        search_filter = {"source": {"$in": sorted(indexed_docs)}}
+
     embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
     vectorstore = Chroma(persist_directory=str(CHROMA_PATH), embedding_function=embeddings)
 
     _emit(progress_callback, "search", {"message": "Query embedded. Searching nearest chunks."})
     try:
-        if selected_docs:
+        if search_filter:
             results = vectorstore.similarity_search_with_score(
                 question, k=n_results,
-                filter={"source": {"$in": selected_docs}}
+                filter=search_filter,
             )
         else:
             results = vectorstore.similarity_search_with_score(question, k=n_results)
@@ -116,6 +133,8 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     sources = []
     for rank, (doc, distance) in enumerate(results, start=1):
         src = Path(doc.metadata.get("source", "unknown")).name
+        if indexed_docs and src not in indexed_docs:
+            continue
         file_type = doc.metadata.get("file_type")
         location_type = doc.metadata.get("location_type")
         location_label = doc.metadata.get("location_label")
@@ -150,6 +169,10 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         }
         sources.append(source)
         _emit(progress_callback, "candidate", source)
+
+    if not context_parts:
+        _emit(progress_callback, "empty", {"message": "No usable chunks matched the question."})
+        return "", []
 
     _emit(progress_callback, "complete", {"matches": len(sources)})
     return "\n\n".join(context_parts), sources
@@ -187,6 +210,9 @@ def generate_answer(
     Call Groq with retrieved context and prior conversation history.
     Returns the answer string.
     """
+    if not context.strip():
+        return MISSING_CONTEXT_ANSWER
+
     messages = [
         {
             "role": "system",
@@ -228,8 +254,8 @@ def generate_answer(
 
 def query_documents(question: str, chat_history: list | None = None, n_results: int = 5):
     context, sources = retrieve_chunks(question, n_results)
-    if not context and not chat_history:
-        return "No relevant information found in the documents.", []
+    if not context:
+        return MISSING_CONTEXT_ANSWER, []
     answer = generate_answer(question, context, chat_history)
     return answer, sources
 
