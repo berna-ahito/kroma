@@ -26,7 +26,7 @@ Kroma is a local-document RAG app built around trust: upload your files, ask a q
 
 It currently supports **PDF, TXT, and Markdown** uploads. Text and Markdown files must be UTF-8 or UTF-8-SIG encoded.
 
-## Demo placeholders
+## Preview
 
 Real screenshots should be added at these paths when available. No mock screenshots are included.
 
