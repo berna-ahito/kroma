@@ -4,20 +4,29 @@ Run from the repo root:
     .\\venv\\Scripts\\python.exe evals\\trust_behavior.py
 """
 
+import json
+import gc
+import io
+import os
 from pathlib import Path
 import sys
 import tempfile
 
+import chromadb
+from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import api as kroma_api  # noqa: E402
+import ingest as kroma_ingest  # noqa: E402
+import rag as kroma_rag  # noqa: E402
 from rag import (  # noqa: E402
     build_source_catalog,
     build_source_linked_context,
     normalize_summary_sections,
+    retrieve_chunks,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
     sanitize_summary_source_ids,
@@ -289,7 +298,7 @@ def _expect_http_error(name: str, status_code: int, func, failures: list) -> Non
 
 def run_delete_filename_evals(failures: list) -> None:
     original_docs_folder = kroma_api.DOCS_FOLDER
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
         temp_docs = Path(temp_dir) / "docs"
         temp_docs.mkdir()
         kroma_api.DOCS_FOLDER = temp_docs
@@ -430,6 +439,248 @@ def run_upload_validation_evals(failures: list) -> None:
                 print("FAIL: text accepts UTF-8-SIG content")
         finally:
             kroma_api.DOCS_FOLDER = original_docs_folder
+
+
+def run_no_context_chat_eval(failures: list) -> None:
+    original_retrieve = kroma_api.retrieve_chunks
+    original_generate = kroma_api.generate_answer
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: ("", [])
+
+        def fail_generate(*args, **kwargs):
+            raise AssertionError("Groq generation should not run without retrieved context.")
+
+        kroma_api.generate_answer = fail_generate
+        result = kroma_api.chat(kroma_api.ChatRequest(question="What is only in missing docs?"))
+        expected_answer = "That information was not found in the uploaded documents."
+        if result != {"answer": expected_answer, "sources": [], "show_sources": False}:
+            failures.append(("no-context chat returns deterministic missing-info answer", expected_answer, result))
+            print("FAIL: no-context chat returns deterministic missing-info answer")
+        else:
+            print("PASS: no-context chat returns deterministic missing-info answer")
+    except Exception as exc:
+        failures.append(("no-context chat does not call Groq", "no generation call", repr(exc)))
+        print("FAIL: no-context chat does not call Groq")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
+        kroma_api.generate_answer = original_generate
+
+
+def run_delete_index_evals(failures: list) -> None:
+    original_docs_folder = kroma_api.DOCS_FOLDER
+    original_chroma_path = kroma_ingest.CHROMA_PATH
+    original_stats_file = kroma_ingest.STATS_FILE
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        temp_docs = root / "docs"
+        temp_docs.mkdir()
+        temp_chroma = root / "chroma_db"
+        temp_stats = root / "index_stats.json"
+        (temp_docs / "delete-me.txt").write_text("deleted-only-token", encoding="utf-8")
+        (temp_docs / "keep.txt").write_text("keep-only-token", encoding="utf-8")
+        temp_stats.write_text(
+            json.dumps(
+                {
+                    "total_chunks": 2,
+                    "total_pages": 0,
+                    "docs": [
+                        {"name": "delete-me.txt", "file_type": "txt", "pages": 0, "chunks": 1},
+                        {"name": "keep.txt", "file_type": "txt", "pages": 0, "chunks": 1},
+                    ],
+                    "processed_at": "2026-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        client = chromadb.PersistentClient(path=str(temp_chroma))
+        collection = client.get_or_create_collection("langchain")
+        collection.add(
+            ids=["delete-me-1", "keep-1"],
+            embeddings=[[0.1, 0.2], [0.2, 0.1]],
+            documents=["deleted-only-token", "keep-only-token"],
+            metadatas=[{"source": "delete-me.txt"}, {"source": "keep.txt"}],
+        )
+
+        kroma_api.DOCS_FOLDER = temp_docs
+        kroma_ingest.CHROMA_PATH = temp_chroma
+        kroma_ingest.STATS_FILE = temp_stats
+        try:
+            result = kroma_api.delete_doc("delete-me.txt")
+            deleted_records = collection.get(where={"source": "delete-me.txt"})
+            kept_records = collection.get(where={"source": "keep.txt"})
+            stats = json.loads(temp_stats.read_text(encoding="utf-8"))
+            deleted_ok = (
+                result == {"deleted": "delete-me.txt"}
+                and not (temp_docs / "delete-me.txt").exists()
+                and deleted_records.get("ids") == []
+                and kept_records.get("ids") == ["keep-1"]
+                and [doc["name"] for doc in stats.get("docs", [])] == ["keep.txt"]
+                and stats.get("total_chunks") == 1
+            )
+            if not deleted_ok:
+                failures.append(("deleted document removed from retrieval index", "only keep.txt remains", {
+                    "result": result,
+                    "deleted_records": deleted_records.get("ids"),
+                    "kept_records": kept_records.get("ids"),
+                    "stats": stats,
+                }))
+                print("FAIL: deleted document removed from retrieval index")
+            else:
+                print("PASS: deleted document removed from retrieval index")
+        finally:
+            try:
+                client.clear_system_cache()
+            except Exception:
+                pass
+            del collection
+            del client
+            gc.collect()
+            kroma_api.DOCS_FOLDER = original_docs_folder
+            kroma_ingest.CHROMA_PATH = original_chroma_path
+            kroma_ingest.STATS_FILE = original_stats_file
+
+
+def run_deleted_only_query_eval(failures: list) -> None:
+    original_chroma_path = kroma_rag.CHROMA_PATH
+    original_load_index_stats = kroma_rag.load_index_stats
+    original_embeddings = kroma_rag.SentenceTransformerEmbeddings
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_chroma = Path(temp_dir) / "chroma_db"
+        temp_chroma.mkdir()
+        try:
+            kroma_rag.CHROMA_PATH = temp_chroma
+            kroma_rag.load_index_stats = lambda: {
+                "total_chunks": 1,
+                "docs": [{"name": "keep.txt", "file_type": "txt", "pages": 0, "chunks": 1}],
+            }
+
+            def fail_embeddings(*args, **kwargs):
+                raise AssertionError("Deleted-only query should stop before embedding.")
+
+            kroma_rag.SentenceTransformerEmbeddings = fail_embeddings
+            context, sources = retrieve_chunks("deleted-only-token", selected_docs=["delete-me.txt"])
+            if context != "" or sources != []:
+                failures.append(("deleted-only document cannot be queried", ("", []), (context, sources)))
+                print("FAIL: deleted-only document cannot be queried")
+            else:
+                print("PASS: deleted-only document cannot be queried")
+        except Exception as exc:
+            failures.append(("deleted-only document cannot be queried", "no retrieval/embedding", repr(exc)))
+            print("FAIL: deleted-only document cannot be queried")
+        finally:
+            kroma_rag.CHROMA_PATH = original_chroma_path
+            kroma_rag.load_index_stats = original_load_index_stats
+            kroma_rag.SentenceTransformerEmbeddings = original_embeddings
+
+
+def run_demo_key_evals(failures: list) -> None:
+    original_retrieve = kroma_api.retrieve_chunks
+    original_generate = kroma_api.generate_answer
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        def fail_retrieve(*args, **kwargs):
+            raise AssertionError("Protected endpoint ran without a valid demo key.")
+
+        kroma_api.retrieve_chunks = fail_retrieve
+        os.environ["KROMA_DEMO_KEY"] = "demo-secret"
+        missing = client.post("/api/chat", json={"question": "hello"})
+        wrong = client.post("/api/chat", headers={"X-Kroma-Demo-Key": "wrong"}, json={"question": "hello"})
+        health = client.get("/health")
+        if missing.status_code != 401 or wrong.status_code != 401 or health.status_code != 200:
+            failures.append(("demo key required when configured", "401/401/200", (missing.status_code, wrong.status_code, health.status_code)))
+            print("FAIL: demo key required when configured")
+        else:
+            print("PASS: demo key required when configured")
+
+        kroma_api.generate_answer = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Public demo should not call Groq generation."))
+        public_demo = client.post("/api/demo/chat", json={"question": kroma_api.PUBLIC_DEMO_QUESTIONS[0]})
+        unsupported_public_question = client.post("/api/demo/chat", json={"question": "Tell me anything you want about Kroma."})
+        status_response = client.get("/api/status")
+        status_payload = status_response.json()
+        public_demo_ok = (
+            public_demo.status_code == 200
+            and public_demo.json().get("show_sources") is True
+            and public_demo.json().get("sources", [{}])[0].get("source") == kroma_api.PUBLIC_DEMO_DOCUMENT
+            and unsupported_public_question.status_code == 400
+            and status_payload.get("demo_key_required") is True
+            and status_payload.get("public_demo", {}).get("note") == kroma_api.PUBLIC_DEMO_NOTE
+        )
+        if not public_demo_ok:
+            failures.append(("public demo available without key when demo key is configured", "200 demo/400 unsupported/status metadata", {
+                "demo_status": public_demo.status_code,
+                "demo_body": public_demo.json() if public_demo.headers.get("content-type", "").startswith("application/json") else public_demo.text,
+                "unsupported_status": unsupported_public_question.status_code,
+                "status": status_payload,
+            }))
+            print("FAIL: public demo available without key when demo key is configured")
+        else:
+            print("PASS: public demo available without key when demo key is configured")
+
+        blocked_cases = [
+            ("upload requires demo key", lambda: client.post("/api/upload", files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")})),
+            ("process requires demo key", lambda: client.post("/api/process")),
+            ("delete requires demo key", lambda: client.delete("/api/docs/notes.txt")),
+            ("clear library requires demo key", lambda: client.delete("/api/library")),
+            ("flashcards require demo key", lambda: client.post("/api/flashcards", json={"selected_docs": ["notes.txt"], "count": 8})),
+            ("quiz requires demo key", lambda: client.post("/api/quiz", json={"selected_docs": ["notes.txt"], "difficulty": "easy", "count": 8})),
+            ("summary requires demo key", lambda: client.post("/api/summary", json={"selected_docs": ["notes.txt"]})),
+            ("suggestions require demo key", lambda: client.post("/api/suggest", json={"selected_docs": ["notes.txt"]})),
+        ]
+        blocked_statuses = [(name, call().status_code) for name, call in blocked_cases]
+        if any(status != 401 for _, status in blocked_statuses):
+            failures.append(("no-key custom document actions remain blocked", "all 401", blocked_statuses))
+            print("FAIL: no-key custom document actions remain blocked")
+        else:
+            print("PASS: no-key custom document actions remain blocked")
+
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: ("", [])
+        kroma_api.generate_answer = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Groq should not run."))
+        allowed = client.post("/api/chat", headers={"X-Kroma-Demo-Key": "demo-secret"}, json={"question": "missing topic"})
+        if allowed.status_code != 200:
+            failures.append(("correct demo key allows protected endpoint", 200, allowed.status_code))
+            print("FAIL: correct demo key allows protected endpoint")
+        else:
+            print("PASS: correct demo key allows protected endpoint")
+
+        os.environ.pop("KROMA_DEMO_KEY", None)
+        no_key_required = client.post("/api/chat", json={"question": "missing topic"})
+        if no_key_required.status_code != 200:
+            failures.append(("demo key not required when unset", 200, no_key_required.status_code))
+            print("FAIL: demo key not required when unset")
+        else:
+            print("PASS: demo key not required when unset")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
+        kroma_api.generate_answer = original_generate
+        if original_key is None:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+        else:
+            os.environ["KROMA_DEMO_KEY"] = original_key
+
+
+def run_request_bound_evals(failures: list) -> None:
+    original_retrieve = kroma_api.retrieve_chunks
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Invalid input should fail before retrieval."))
+        cases = [
+            ("oversized chat question rejected", "/api/chat", {"question": "x" * 2001}),
+            ("oversized history rejected", "/api/chat", {"question": "hello", "history": [{"role": "user", "content": "x"}] * 17}),
+            ("too many selected docs rejected", "/api/chat", {"question": "hello", "selected_docs": [f"doc{i}.txt" for i in range(26)]}),
+            ("invalid flashcard count rejected", "/api/flashcards", {"selected_docs": ["notes.txt"], "count": 31}),
+            ("invalid quiz difficulty rejected", "/api/quiz", {"selected_docs": ["notes.txt"], "difficulty": "expert", "count": 8}),
+            ("summary selected doc bound rejected", "/api/summary", {"selected_docs": [f"doc{i}.txt" for i in range(26)]}),
+        ]
+        for name, path, payload in cases:
+            response = client.post(path, json=payload)
+            if response.status_code != 400:
+                failures.append((name, 400, response.status_code))
+                print(f"FAIL: {name}")
+            else:
+                print(f"PASS: {name}")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
 
 
 def main() -> int:
@@ -584,6 +835,11 @@ def main() -> int:
 
     run_delete_filename_evals(failures)
     run_upload_validation_evals(failures)
+    run_no_context_chat_eval(failures)
+    run_delete_index_evals(failures)
+    run_deleted_only_query_eval(failures)
+    run_demo_key_evals(failures)
+    run_request_bound_evals(failures)
 
     if failures:
         print("\nFailures:")

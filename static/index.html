@@ -158,6 +158,16 @@
     display: block;
   }
 
+  .demo-note {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    color: var(--text-3);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
   /* BUTTONS */
   .btn-primary {
     background: var(--gold);
@@ -229,6 +239,10 @@
   }
 
   .doc-item:hover { border-color: var(--surface-3); }
+
+  .doc-item.demo-doc {
+    border-color: var(--gold-soft);
+  }
 
   .doc-icon {
     width: 16px;
@@ -1175,6 +1189,19 @@
     </svg>
   </a>
 
+  <div class="sidebar-label">Demo access</div>
+  <input
+    id="demoKeyInput"
+    type="password"
+    placeholder="Demo key if required"
+    autocomplete="off"
+    oninput="storeDemoKey(this.value)"
+    style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:0.65rem 0.75rem;font-family:'Outfit',sans-serif;font-size:0.9rem;outline:none;"
+  >
+  <div class="demo-note" id="publicDemoNote" style="display:none;"></div>
+
+  <hr class="divider">
+
   <div class="sidebar-label">Upload</div>
 
   <label class="upload-area" id="uploadArea">
@@ -1316,6 +1343,63 @@
   let isIndexed = false;
   let loadedChatId = null;
   let currentView = 'chat';
+  const DEMO_KEY_STORAGE = 'kroma_demo_key';
+  const NO_PROCESSED_MESSAGE = 'No processed documents are available. Upload and process a document first.';
+  const PUBLIC_DEMO_NOTE = 'Public demo uses a sample document. Enter demo key to test your own files.';
+  let demoKeyRequired = false;
+  let publicDemoQuestions = [];
+  let publicDemoQuestionLimit = 180;
+  let publicDemoDocument = 'kroma-public-demo.md';
+
+  function storeDemoKey(value) {
+    if (value) sessionStorage.setItem(DEMO_KEY_STORAGE, value);
+    else sessionStorage.removeItem(DEMO_KEY_STORAGE);
+    renderDemoAccessState();
+  }
+
+  function apiFetch(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    const demoKey = sessionStorage.getItem(DEMO_KEY_STORAGE);
+    if (demoKey) headers.set('X-Kroma-Demo-Key', demoKey);
+    return fetch(url, { ...options, headers });
+  }
+
+  function hasDemoKey() {
+    return Boolean(sessionStorage.getItem(DEMO_KEY_STORAGE));
+  }
+
+  function isPublicDemoMode() {
+    return demoKeyRequired && !hasDemoKey();
+  }
+
+  function renderDemoAccessState() {
+    const note = document.getElementById('publicDemoNote');
+    const chatInput = document.getElementById('chatInput');
+    if (!note) return;
+    if (!demoKeyRequired) {
+      note.style.display = 'none';
+      note.textContent = '';
+      if (chatInput) chatInput.placeholder = 'Ask anything about your documents...';
+      return;
+    }
+    note.style.display = 'block';
+    note.textContent = hasDemoKey()
+      ? 'Demo key entered. Custom file tools are unlocked for this tab.'
+      : PUBLIC_DEMO_NOTE;
+    if (chatInput) {
+      chatInput.placeholder = hasDemoKey()
+        ? 'Ask anything about your documents...'
+        : 'Choose a suggested sample question...';
+    }
+  }
+
+  function resetDocumentSession() {
+    chatHistory = [];
+    loadedChatId = null;
+    currentView = 'chat';
+    document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('suggestionsBar').style.display = 'none';
+  }
 
   function createIcon(name, className = 'ui-icon') {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1367,11 +1451,30 @@
   }
 
   async function init() {
+    const demoKeyInput = document.getElementById('demoKeyInput');
+    if (demoKeyInput) demoKeyInput.value = sessionStorage.getItem(DEMO_KEY_STORAGE) || '';
     try {
       const res = await fetch('/api/status');
       const data = await res.json();
-      isIndexed = data.indexed;
+      demoKeyRequired = Boolean(data.demo_key_required);
+      publicDemoQuestions = Array.isArray(data.public_demo?.questions) ? data.public_demo.questions : [];
+      publicDemoQuestionLimit = Number(data.public_demo?.question_limit) || 180;
+      publicDemoDocument = data.public_demo?.document || 'kroma-public-demo.md';
+      renderDemoAccessState();
+      isIndexed = Boolean(data.indexed);
+      if (isPublicDemoMode()) {
+        isIndexed = true;
+        document.getElementById('metrics').style.display = 'none';
+        renderPublicDemoLibrary();
+        document.getElementById('topbarSub').textContent = 'Public sample document';
+        if (chatHistory.length === 0) {
+          renderPublicDemoWelcome();
+          renderSuggestions(publicDemoQuestions);
+        }
+        return;
+      }
       if (data.stats) updateMetrics(data.stats);
+      else document.getElementById('metrics').style.display = 'none';
       renderLibrary(data.docs || []);
       if (isIndexed) {
         const es = document.getElementById('emptyState');
@@ -1379,6 +1482,7 @@
         document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
         if (chatHistory.length === 0) fetchSuggestions();
       } else {
+        resetDocumentSession();
         const wrapper = document.getElementById('chatWrapper');
         wrapper.innerHTML = `
           <div class="empty-state" id="emptyState">
@@ -1388,7 +1492,7 @@
               <path d="M7 16h6"/>
             </svg>
             <h3>Ask your documents anything</h3>
-            <p>Upload PDF, TXT, or Markdown files, process them, then ask questions. Answers are grounded in your processed sources.</p>
+            <p>${NO_PROCESSED_MESSAGE}</p>
             <div class="steps">
               <div class="step"><span class="step-num">1</span><span>Upload a supported file from your computer</span></div>
               <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong> to prepare your files</span></div>
@@ -1397,6 +1501,56 @@
           </div>`;
       }
     } catch(e) {}
+  }
+
+  function renderPublicDemoWelcome() {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.replaceChildren();
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.id = 'emptyState';
+    empty.innerHTML = `
+      <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M7 12h10"/>
+        <path d="M7 16h6"/>
+      </svg>
+      <h3>Try Kroma with a sample document</h3>
+    `;
+    const body = document.createElement('p');
+    body.textContent = PUBLIC_DEMO_NOTE;
+    empty.appendChild(body);
+    wrapper.appendChild(empty);
+  }
+
+  function renderPublicDemoLibrary() {
+    const list = document.getElementById('libraryList');
+    list.replaceChildren();
+
+    const item = document.createElement('div');
+    item.className = 'doc-item demo-doc';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.disabled = true;
+    checkbox.style.cssText = 'accent-color:var(--gold);flex-shrink:0;';
+
+    const icon = createIcon('document', 'doc-icon ui-icon');
+
+    const info = document.createElement('div');
+    info.className = 'doc-info';
+
+    const docTitle = document.createElement('div');
+    docTitle.className = 'doc-name';
+    docTitle.title = publicDemoDocument;
+    docTitle.textContent = publicDemoDocument;
+    info.appendChild(docTitle);
+
+    item.appendChild(checkbox);
+    item.appendChild(icon);
+    item.appendChild(info);
+    list.appendChild(item);
   }
 
   const fileInput = document.getElementById('fileInput');
@@ -1425,24 +1579,36 @@
   }
 
   async function uploadFile(file) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to upload custom files.', 'error');
+      return;
+    }
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    const res = await apiFetch('/api/upload', { method: 'POST', body: form });
     if (res.ok) showToast(`Uploaded: ${file.name}`, 'success');
-    else showToast(`Failed: ${file.name}`, 'error');
+    else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || `Failed: ${file.name}`, 'error');
+    }
   }
 
   async function processDocuments() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to process custom files.', 'error');
+      return;
+    }
     const btn = document.getElementById('processBtn');
     btn.disabled = true;
     btn.textContent = 'Processing…';
     try {
-      const res = await fetch('/api/process', { method: 'POST' });
+      const res = await apiFetch('/api/process', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         isIndexed = true;
         updateMetrics(data.stats);
-        document.getElementById('emptyState').style.display = 'none';
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) emptyState.style.display = 'none';
         document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
         showToast('Ready — ask your first question', 'success');
         await init();
@@ -1458,10 +1624,15 @@
     const input = document.getElementById('chatInput');
     const question = input.value.trim();
     if (!question) return;
-    if (!isIndexed) { showToast('Process documents first', 'error'); return; }
+    const publicDemo = isPublicDemoMode();
+    if (!isIndexed && !publicDemo) { showToast(NO_PROCESSED_MESSAGE, 'error'); return; }
+    if (publicDemo && question.length > publicDemoQuestionLimit) {
+      showToast(`Public demo questions are limited to ${publicDemoQuestionLimit} characters.`, 'error');
+      return;
+    }
 
-    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
-    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+    const selected = publicDemo ? [] : [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (!publicDemo && selected.length === 0) { showToast('Select at least one document', 'error'); return; }
 
     input.value = '';
     autoResize(input);
@@ -1473,13 +1644,17 @@
     document.getElementById('sendBtn').disabled = true;
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch(publicDemo ? '/api/demo/chat' : '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history: chatHistory.slice(-16), selected_docs: selected })
+        body: JSON.stringify(publicDemo ? { question } : { question, history: chatHistory.slice(-16), selected_docs: selected })
       });
       const data = await res.json();
       thinking.remove();
+      if (!res.ok) {
+        appendMessage('ai', data.detail || 'Request failed.');
+        return;
+      }
       const sources = data.show_sources ? (data.sources || []) : [];
       appendMessage('ai', data.answer, sources);
       chatHistory.push({ role: 'assistant', content: data.answer, sources, show_sources: data.show_sources });
@@ -1556,7 +1731,7 @@
 
     const summaryText = document.createElement('span');
     summaryText.className = 'source-summary-text';
-    summaryText.textContent = `Sources: ${formatSourceSummary(sources)}`;
+    summaryText.textContent = `Sources used: ${formatSourceSummary(sources)}`;
     summary.appendChild(summaryText);
 
     const toggle = document.createElement('button');
@@ -1708,14 +1883,30 @@
   }
 
   async function deleteDoc(name) {
-    const res = await fetch(`/api/docs/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    if (res.ok) { showToast(`Removed: ${name}`, 'success'); await init(); }
-    else showToast('Could not remove file', 'error');
+    const res = await apiFetch(`/api/docs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res.ok) {
+      resetDocumentSession();
+      showToast(`Removed: ${name}`, 'success');
+      await init();
+    }
+    else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || 'Could not remove file', 'error');
+    }
   }
 
   async function clearLibrary() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to clear custom files.', 'error');
+      return;
+    }
     showConfirm('Remove all documents and reset the library?', async () => {
-      await fetch('/api/library', { method: 'DELETE' });
+      const res = await apiFetch('/api/library', { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.detail || 'Could not clear library', 'error');
+        return;
+      }
       chatHistory = [];
       isIndexed = false;
       document.getElementById('metrics').style.display = 'none';
@@ -1771,6 +1962,12 @@
     resetCurrentChat();
     currentView = 'chat';
     document.getElementById('sendBtn').disabled = false;
+    if (isPublicDemoMode()) {
+      renderPublicDemoWelcome();
+      renderSuggestions(publicDemoQuestions);
+      showToast('New chat started', 'success');
+      return;
+    }
     if (isIndexed) fetchSuggestions();
     else document.getElementById('suggestionsBar').style.display = 'none';
     const wrapper = document.getElementById('chatWrapper');
@@ -1783,7 +1980,7 @@
             <path d="M7 16h6"/>
           </svg>
           <h3>Ask your documents anything</h3>
-          <p>Upload PDF, TXT, or Markdown files, process them, then ask questions grounded in your sources.</p>
+          <p>${NO_PROCESSED_MESSAGE}</p>
           <div class="steps">
             <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
             <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
@@ -1805,6 +2002,10 @@
   let quizSourceCatalog = new Map();
 
   async function generateQuiz(difficulty = null, count = null) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to generate study tools from custom files.', 'error');
+      return;
+    }
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
 
@@ -1821,7 +2022,7 @@
     btn.textContent = 'Generating…';
 
     try {
-      const res = await fetch('/api/quiz', {
+      const res = await apiFetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected_docs: selected, difficulty, count })
@@ -2219,7 +2420,10 @@
     if (loadedChatId === id) {
       resetCurrentChat();
       currentView = 'chat';
-      if (isIndexed) {
+      if (isPublicDemoMode()) {
+        renderPublicDemoWelcome();
+        renderSuggestions(publicDemoQuestions);
+      } else if (isIndexed) {
         fetchSuggestions();
       } else {
         document.getElementById('suggestionsBar').style.display = 'none';
@@ -2232,7 +2436,7 @@
               <path d="M7 16h6"/>
             </svg>
             <h3>Ask your documents anything</h3>
-            <p>Upload PDF, TXT, or Markdown files, process them, then ask questions grounded in your sources.</p>
+            <p>${NO_PROCESSED_MESSAGE}</p>
             <div class="steps">
               <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
               <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
@@ -2246,6 +2450,10 @@
   }
 
   async function generateFlashcards(count = null) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to generate study tools from custom files.', 'error');
+      return;
+    }
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
 
@@ -2259,7 +2467,7 @@
     btn.textContent = 'Generating…';
 
     try {
-      const res = await fetch('/api/flashcards', {
+      const res = await apiFetch('/api/flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected_docs: selected, count })
@@ -2470,6 +2678,10 @@
   }
 
   async function generateSummary() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to summarize custom files.', 'error');
+      return;
+    }
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
 
@@ -2482,7 +2694,7 @@
     btn.textContent = 'Summarizing…';
 
     try {
-      const res = await fetch('/api/summary', {
+      const res = await apiFetch('/api/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected_docs: selected })
@@ -2664,7 +2876,7 @@
   }
 
   function canShowSuggestions() {
-    return isIndexed
+    return (isIndexed || isPublicDemoMode())
       && currentView === 'chat'
       && chatHistory.length === 0
       && loadedChatId === null;
@@ -2674,12 +2886,16 @@
 
   async function fetchSuggestions() {
     if (!canShowSuggestions()) return;
+    if (isPublicDemoMode()) {
+      renderSuggestions(publicDemoQuestions);
+      return;
+    }
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) return;
     if (suggestionsPending) return;
     suggestionsPending = true;
     try {
-      const res = await fetch('/api/suggest', {
+      const res = await apiFetch('/api/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected_docs: selected })

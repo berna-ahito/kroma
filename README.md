@@ -50,6 +50,9 @@ Real screenshots should be added at these paths when available. No mock screensh
 
 - **Sources are part of the product.** Answers, flashcards, quizzes, and summaries can expose the chunks used to support them.
 - **Missing-info guard.** Source cards are hidden for greetings, unsupported answers, or cases without retrieved context.
+- **No-context LLM guard.** If retrieval finds no usable context, Kroma returns a deterministic "not found in uploaded documents" response without calling Groq.
+- **Optional demo gate.** Public demos can set `KROMA_DEMO_KEY` to require a simple header key on upload, indexing, delete, unrestricted document chat, and study-generation endpoints.
+- **Public sample mode.** When the demo gate is active, visitors without the key can still try a bundled sample document with suggested questions and source cards.
 - **Source-linked study tools.** Generated study content uses internal source IDs, then strips invalid or model-invented IDs before rendering.
 - **Upload hardening.** Filenames are sanitized, path traversal is rejected, uploads are capped at 25 MB, and file content is checked against supported types.
 - **XSS-safe rendering.** AI Markdown output is sanitized before display, and most dynamic UI text is rendered through text nodes.
@@ -151,6 +154,7 @@ Kroma can be deployed to Render as a Docker Web Service.
    | Variable | Value |
    |---|---|
    | `GROQ_API_KEY` | Your Groq API key |
+   | `KROMA_DEMO_KEY` | Optional demo access key for public portfolio deployments |
 
 5. Leave `PORT` unset — Render injects it automatically. The Dockerfile reads `${PORT:-8000}`.
 
@@ -158,7 +162,9 @@ Kroma can be deployed to Render as a Docker Web Service.
 
 - **Ephemeral filesystem.** Uploaded documents, Chroma index, and embedding model cache are lost on restart or redeploy. Uploads + re-indexing are needed after each restart.
 - **Cold starts.** The free tier spins down after inactivity. Expect 30–60 s delay on the first request.
-- **SentenceTransformer model download.** The embedding model (`BAAI/bge-small-en-v1.5`) downloads on first `/api/process` call, adding startup latency.
+- **SentenceTransformer model download.** The embedding model (`BAAI/bge-small-en-v1.5`) downloads on first `/api/process` call, adding startup latency. The Docker image keeps Hugging Face/Transformers online and installs CPU-only PyTorch, so no CUDA/GPU packages are required.
+- **Demo protection.** If `KROMA_DEMO_KEY` is set, the app requires the `X-Kroma-Demo-Key` header for upload, processing, deletion, clear-library, unrestricted document chat, flashcards, quiz, summary, and suggestions. `/health`, `/`, `/app`, `/api/status`, and the bundled public sample demo stay public. The frontend stores the entered demo key in browser `sessionStorage` only.
+- **Public sample demo.** Visitors without the key see: "Public demo uses a sample document. Enter demo key to test your own files." They can ask only the suggested sample questions; custom files and library actions remain blocked. The public sample uses deterministic bundled answers, so unkeyed visitors do not consume Groq tokens.
 - **Not production-ready.** For persistent storage, add a Render Disk, object storage, or a managed vector DB (e.g., Chroma Cloud, Pinecone, Supabase pgvector) and mount persistent volumes.
 
 **Health check.** Render pings `GET /health` (returns `{"status": "ok"}`). This endpoint requires no API key, no document load, and no Chroma connection.

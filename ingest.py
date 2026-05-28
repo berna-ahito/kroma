@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import chromadb
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.embeddings import SentenceTransformerEmbeddings
@@ -13,8 +14,8 @@ from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "0")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 
 BASE_DIR = Path(__file__).resolve().parent
 DOCS_FOLDER = BASE_DIR / "docs"
@@ -214,6 +215,60 @@ def load_index_stats():
             return json.load(fh)
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def _empty_index_stats() -> dict:
+    return {
+        "total_chunks": 0,
+        "total_pages": 0,
+        "docs": [],
+        "embedding_model": EMBEDDING_MODEL,
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "processed_at": None,
+    }
+
+
+def _stats_without_document(filename: str) -> dict:
+    stats = load_index_stats() or _empty_index_stats()
+    docs = [
+        doc
+        for doc in stats.get("docs", [])
+        if isinstance(doc, dict) and doc.get("name") != filename
+    ]
+    updated = {
+        **stats,
+        "docs": docs,
+        "total_chunks": sum(int(doc.get("chunks") or 0) for doc in docs),
+        "total_pages": sum(int(doc.get("pages") or 0) for doc in docs),
+    }
+    if not docs:
+        updated = _empty_index_stats()
+    return updated
+
+
+def delete_document_from_index(filename: str) -> dict:
+    """Remove one document's chunks from Chroma and update index stats."""
+    if CHROMA_PATH.exists():
+        client = None
+        try:
+            client = chromadb.PersistentClient(path=str(CHROMA_PATH))
+            collection = client.get_collection("langchain")
+            collection.delete(where={"source": filename})
+        except Exception as exc:
+            if "does not exist" not in str(exc).lower():
+                raise
+        finally:
+            if client is not None:
+                try:
+                    client.clear_system_cache()
+                except Exception:
+                    pass
+            gc.collect()
+
+    updated_stats = _stats_without_document(filename)
+    _write_json(STATS_FILE, updated_stats)
+    return updated_stats
 
 
 if __name__ == "__main__":
