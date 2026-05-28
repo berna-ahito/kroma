@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: kroma
+    runtime: docker
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
