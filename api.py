@@ -134,6 +134,11 @@ async def _read_supported_upload(file: UploadFile, suffix: str) -> bytes:
     
 # ── Routes ──────────────────────────────────────────────────────────────────
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/api/status")
 def status():
     stats = load_index_stats()

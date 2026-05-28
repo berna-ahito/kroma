@@ -135,6 +135,34 @@ kroma/
 └── README.md
 ```
 
+## Deployment notes
+
+### Render Free (Docker)
+
+Kroma can be deployed to Render as a Docker Web Service.
+
+**Before deploying:**
+
+1. Fork or push this repo to GitHub.
+2. In the Render Dashboard, create a **New Web Service** → **Connect a repository** → select your fork.
+3. Render auto-detects the `Dockerfile`. No build command is needed.
+4. Set the following **Environment Variable** (never in code):
+
+   | Variable | Value |
+   |---|---|
+   | `GROQ_API_KEY` | Your Groq API key |
+
+5. Leave `PORT` unset — Render injects it automatically. The Dockerfile reads `${PORT:-8000}`.
+
+**Render Free limitations (portfolio demo):**
+
+- **Ephemeral filesystem.** Uploaded documents, Chroma index, and embedding model cache are lost on restart or redeploy. Uploads + re-indexing are needed after each restart.
+- **Cold starts.** The free tier spins down after inactivity. Expect 30–60 s delay on the first request.
+- **SentenceTransformer model download.** The embedding model (`BAAI/bge-small-en-v1.5`) downloads on first `/api/process` call, adding startup latency.
+- **Not production-ready.** For persistent storage, add a Render Disk, object storage, or a managed vector DB (e.g., Chroma Cloud, Pinecone, Supabase pgvector) and mount persistent volumes.
+
+**Health check.** Render pings `GET /health` (returns `{"status": "ok"}`). This endpoint requires no API key, no document load, and no Chroma connection.
+
 ## Portfolio context
 
 Kroma is Build 1 of my AI engineering portfolio. It demonstrates a full RAG loop: hardened uploads, local indexing, vector retrieval, LLM-backed answers, source-aware UI, and deterministic trust behavior checks.
