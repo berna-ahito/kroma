@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kroma</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23eab308'/%3E%3Ctext x='16' y='23' font-family='Outfit,sans-serif' font-size='18' font-weight='800' text-anchor='middle' fill='%231a1200'%3EK%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
@@ -138,10 +139,9 @@
   .upload-area input { display: none; }
 
   .upload-icon {
-    font-size: 1.4rem;
     display: block;
-    margin-bottom: 0.35rem;
-    filter: grayscale(0.3);
+    margin: 0 auto 0.35rem;
+    color: var(--gold);
   }
 
   .upload-area .upload-title {
@@ -172,6 +172,10 @@
     transition: background 0.15s, transform 0.1s;
     font-family: 'Outfit', sans-serif;
     letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
   }
 
   .btn-primary:hover { background: #f59e0b; }
@@ -190,6 +194,10 @@
     flex: 1;
     transition: background 0.15s, color 0.15s;
     font-family: 'Outfit', sans-serif;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
 
   .btn-secondary:hover { background: var(--surface-3); color: var(--text); }
@@ -223,9 +231,11 @@
   .doc-item:hover { border-color: var(--surface-3); }
 
   .doc-icon {
-    font-size: 0.9rem;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
     opacity: 0.7;
+    color: var(--gold);
   }
 
   .doc-info { flex: 1; min-width: 0; }
@@ -345,10 +355,31 @@
   }
 
   .empty-icon {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
     display: block;
-    filter: grayscale(0.2);
+    margin: 0 auto 1rem;
+    color: var(--gold);
+  }
+
+  .ui-icon {
+    width: 1em;
+    height: 1em;
+    display: inline-block;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .upload-icon.ui-icon {
+    width: clamp(30px, 5vw, 38px);
+    height: clamp(30px, 5vw, 38px);
+  }
+
+  .empty-icon.ui-icon {
+    width: clamp(48px, 8vw, 64px);
+    height: clamp(48px, 8vw, 64px);
   }
 
   .empty-state h3 {
@@ -433,11 +464,14 @@
     flex-shrink: 0;
     margin-top: 0.15rem;
     letter-spacing: 0.02em;
+    border: 1px solid var(--border);
   }
 
   .avatar.user {
-    background: var(--gold);
-    color: #1a1200;
+    background: var(--surface-2);
+    color: var(--gold);
+    border-color: rgba(245, 158, 11, 0.42);
+    font-family: 'DM Mono', monospace;
   }
 
   .avatar.ai {
@@ -591,6 +625,11 @@
 
   .chat-sources {
     margin-top: 0.35rem;
+  }
+
+  .chat-sources[hidden],
+  .chat-sources .source-tag[hidden] {
+    display: none;
   }
 
   .source-tag {
@@ -1025,6 +1064,27 @@
 
   .history-item:hover { border-color: var(--gold-dim); }
 
+  .history-delete {
+    background: none;
+    border: none;
+    color: var(--surface-3);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.25rem;
+    border-radius: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+  }
+
+  .history-item:hover .history-delete { opacity: 1; }
+
+  .history-delete:hover {
+    color: #ef4444;
+    background: rgba(239,68,68,0.1);
+  }
+
   .history-info { flex: 1; min-width: 0; }
 
   .history-title {
@@ -1119,7 +1179,12 @@
 
   <label class="upload-area" id="uploadArea">
     <input type="file" id="fileInput" accept=".pdf,.txt,.md,.markdown" multiple>
-    <span class="upload-icon">📄</span>
+    <svg class="upload-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
+      <path d="M14 2v5h5"/>
+      <path d="M9 13h6"/>
+      <path d="M9 17h4"/>
+    </svg>
     <span class="upload-title">Click or drag to upload</span>
     <span class="upload-hint">PDF, TXT, Markdown · 25MB max</span>
   </label>
@@ -1145,13 +1210,33 @@
   <hr class="divider">
   <div class="sidebar-label">Tools</div>
   <button class="btn-primary" id="flashcardBtn" onclick="generateFlashcards()">
-    ⚡ Flashcards
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 6h11"/>
+      <path d="M8 12h11"/>
+      <path d="M8 18h11"/>
+      <path d="M4 6h.01"/>
+      <path d="M4 12h.01"/>
+      <path d="M4 18h.01"/>
+    </svg>
+    <span>Flashcards</span>
   </button>
   <button class="btn-primary" id="quizBtn" onclick="generateQuiz()" style="background:var(--surface-2);color:var(--text-2);margin-top:-0.3rem;">
-    🧠 Quiz me
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5"/>
+      <path d="M12 17h.01"/>
+    </svg>
+    <span>Quiz me</span>
   </button>
   <button class="btn-primary" id="summaryBtn" onclick="generateSummary()" style="background:var(--surface-2);color:var(--text-2);margin-top:-0.3rem;">
-    📋 Summarize
+    <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M9 4h6"/>
+      <path d="M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2"/>
+      <path d="M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2"/>
+      <path d="M9 13h6"/>
+      <path d="M9 17h4"/>
+    </svg>
+    <span>Summarize</span>
   </button>
 
   <hr class="divider">
@@ -1171,10 +1256,15 @@
   <div class="topbar">
     <div>
       <div class="topbar-title" id="topbarTitle">Kroma</div>
-      <div class="topbar-sub" id="topbarSub">Your AI-powered document assistant</div>
+      <div class="topbar-sub" id="topbarSub">Your source-grounded study assistant</div>
     </div>
     <button class="btn-secondary" id="exportBtn" onclick="exportChatPDF()" style="width:auto;padding:0.5rem 1.25rem;display:none;flex-shrink:0;white-space:nowrap;max-width:140px;">
-      ↓ Export PDF
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3v12"/>
+        <path d="m7 10 5 5 5-5"/>
+        <path d="M5 21h14"/>
+      </svg>
+      <span>Export Chat</span>
     </button>
   </div>
 
@@ -1209,7 +1299,12 @@
       onkeydown="handleKey(event)"
       oninput="autoResize(this)"
     ></textarea>
-    <button class="btn-send" id="sendBtn" onclick="sendMessage()">↑</button>
+    <button class="btn-send" id="sendBtn" onclick="sendMessage()" aria-label="Send message" title="Send message">
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 19V5"/>
+        <path d="m5 12 7-7 7 7"/>
+      </svg>
+    </button>
   </div>
 
 </main>
@@ -1219,6 +1314,53 @@
 <script>
   let chatHistory = [];
   let isIndexed = false;
+  let loadedChatId = null;
+  let currentView = 'chat';
+
+  function createIcon(name, className = 'ui-icon') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    const addPath = d => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    };
+    const addCircle = attrs => {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      Object.entries(attrs).forEach(([key, value]) => circle.setAttribute(key, value));
+      svg.appendChild(circle);
+    };
+
+    const paths = {
+      document: ['M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z', 'M14 2v5h5', 'M9 13h6', 'M9 17h4'],
+      list: ['M8 6h11', 'M8 12h11', 'M8 18h11', 'M4 6h.01', 'M4 12h.01', 'M4 18h.01'],
+      clipboard: ['M9 4h6', 'M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2', 'M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2', 'M9 13h6', 'M9 17h4'],
+      download: ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14'],
+      folder: ['M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z']
+    };
+
+    if (name === 'quiz') {
+      addCircle({ cx: '12', cy: '12', r: '9' });
+      addPath('M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5');
+      addPath('M12 17h.01');
+      return svg;
+    }
+
+    (paths[name] || paths.document).forEach(addPath);
+    return svg;
+  }
+
+  function setIconButton(button, iconName, label) {
+    button.textContent = '';
+    const text = document.createElement('span');
+    text.textContent = label;
+    button.appendChild(createIcon(iconName));
+    button.appendChild(text);
+  }
 
   function renderSafeMarkdown(target, text) {
     target.innerHTML = DOMPurify.sanitize(marked.parse(String(text ?? '')));
@@ -1240,13 +1382,17 @@
         const wrapper = document.getElementById('chatWrapper');
         wrapper.innerHTML = `
           <div class="empty-state" id="emptyState">
-            <span class="empty-icon">🗂️</span>
+            <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M7 12h10"/>
+              <path d="M7 16h6"/>
+            </svg>
             <h3>Ask your documents anything</h3>
-            <p>Upload PDFs, TXT, or Markdown files, process them, then ask questions. Answers come only from your files — no guessing.</p>
+            <p>Upload PDF, TXT, or Markdown files, process them, then ask questions. Answers are grounded in your processed sources.</p>
             <div class="steps">
               <div class="step"><span class="step-num">1</span><span>Upload a supported file from your computer</span></div>
               <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong> to prepare your files</span></div>
-              <div class="step"><span class="step-num">3</span><span>Ask any question and get answers from your documents</span></div>
+              <div class="step"><span class="step-num">3</span><span>Ask questions and review the cited sources</span></div>
             </div>
           </div>`;
       }
@@ -1334,8 +1480,9 @@
       });
       const data = await res.json();
       thinking.remove();
-      appendMessage('ai', data.answer, data.show_sources ? (data.sources || []) : []);
-      chatHistory.push({ role: 'assistant', content: data.answer });
+      const sources = data.show_sources ? (data.sources || []) : [];
+      appendMessage('ai', data.answer, sources);
+      chatHistory.push({ role: 'assistant', content: data.answer, sources, show_sources: data.show_sources });
     document.getElementById('exportBtn').style.display = 'block';
     } catch(e) {
       thinking.remove();
@@ -1475,7 +1622,9 @@
 
     const avatar = document.createElement('div');
     avatar.className = `avatar ${role}`;
-    avatar.textContent = role === 'user' ? 'YOU' : 'K';
+    avatar.setAttribute('role', 'img');
+    avatar.setAttribute('aria-label', role === 'user' ? 'You' : 'Kroma');
+    avatar.textContent = role === 'user' ? 'Y' : 'K';
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
@@ -1532,9 +1681,7 @@
       checkbox.checked = true;
       checkbox.style.cssText = 'accent-color:var(--gold);cursor:pointer;flex-shrink:0;';
 
-      const icon = document.createElement('span');
-      icon.className = 'doc-icon';
-      icon.textContent = '📄';
+      const icon = createIcon('document', 'doc-icon ui-icon');
 
       const info = document.createElement('div');
       info.className = 'doc-info';
@@ -1602,26 +1749,41 @@
   }
 
   function backToChat() {
+    currentView = 'chat';
+    hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.style.cssText = '';
     wrapper.innerHTML = '';
+    if (chatHistory.length > 0) {
+      chatHistory.forEach(msg => {
+        if (msg.role === 'user') appendMessage('user', msg.content);
+        else if (msg.role === 'assistant') appendMessage('ai', msg.content, msg.sources || []);
+      });
+      document.getElementById('exportBtn').style.display = 'block';
+    } else if (isIndexed) {
+      fetchSuggestions();
+    }
     showToast('Back to chat', 'success');
   }
 
   function newChat() {
     saveCurrentChat();
-    chatHistory = [];
+    resetCurrentChat();
+    currentView = 'chat';
     document.getElementById('sendBtn').disabled = false;
     if (isIndexed) fetchSuggestions();
     else document.getElementById('suggestionsBar').style.display = 'none';
     const wrapper = document.getElementById('chatWrapper');
-    wrapper.innerHTML = '';
     if (!isIndexed) {
       wrapper.innerHTML = `
         <div class="empty-state" id="emptyState">
-          <span class="empty-icon">🗂️</span>
+          <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <path d="M7 12h10"/>
+            <path d="M7 16h6"/>
+          </svg>
           <h3>Ask your documents anything</h3>
-          <p>Upload PDFs, TXT, or Markdown files, process them, then ask questions.</p>
+          <p>Upload PDF, TXT, or Markdown files, process them, then ask questions grounded in your sources.</p>
           <div class="steps">
             <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
             <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
@@ -1645,6 +1807,8 @@
   async function generateQuiz(difficulty = null, count = null) {
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
 
     if (!difficulty || !count) {
       showQuizSettings();
@@ -1678,10 +1842,12 @@
     }
 
     btn.disabled = false;
-    btn.textContent = '🧠 Quiz me';
+    setIconButton(btn, 'quiz', 'Quiz me');
   }
 
   function showQuizSettings() {
+    currentView = 'quiz';
+    hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
     wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
@@ -1744,6 +1910,8 @@
   }
 
   function showQuiz(questions, difficulty = 'medium') {
+    currentView = 'quiz';
+    hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
     questions = Array.isArray(questions) ? questions : [];
@@ -1790,7 +1958,7 @@
       explanation.className = 'quiz-explanation';
       explanation.id = `exp-${i}`;
       const explanationText = document.createElement('div');
-      explanationText.textContent = `💡 ${q?.explanation || ''}`;
+      explanationText.textContent = `Explanation: ${q?.explanation || ''}`;
       explanation.appendChild(explanationText);
       const sourceList = document.createElement('div');
       sourceList.className = 'sources';
@@ -1848,9 +2016,9 @@
 
     document.getElementById('submitQuizBtn').remove();
 
-    const msg = score === quizData.length ? 'Perfect score! 🎉' :
-                score >= quizData.length * 0.7 ? 'Great job! 💪' :
-                score >= quizData.length * 0.5 ? 'Keep studying! 📚' : 'Review the material and try again 🔄';
+    const msg = score === quizData.length ? 'Perfect score!' :
+                score >= quizData.length * 0.7 ? 'Great job!' :
+                score >= quizData.length * 0.5 ? 'Keep studying!' : 'Review the material and try again.';
 
     const scoreDiv = document.createElement('div');
     scoreDiv.className = 'quiz-score';
@@ -1911,19 +2079,55 @@
   // ── HISTORY ──────────────────────────────────────────────────────────
   const HISTORY_KEY = 'kroma_chat_history';
 
+  function setSavedChats(chats) {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(chats.slice(0, 20)));
+  }
+
+  function hasCurrentChatMessages() {
+    return chatHistory.length > 0;
+  }
+
+  function resetCurrentChat() {
+    chatHistory = [];
+    loadedChatId = null;
+    document.getElementById('exportBtn').style.display = 'none';
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+  }
+
   function saveCurrentChat() {
-    if (chatHistory.length === 0) return;
+    if (!hasCurrentChatMessages()) return;
     const saved = getSavedChats();
     const title = chatHistory[0]?.content?.slice(0, 50) || 'Untitled chat';
+
+    if (loadedChatId) {
+      const entry = {
+        id: loadedChatId,
+        title,
+        date: new Date().toLocaleDateString(),
+        messages: [...chatHistory]
+      };
+      const idx = saved.findIndex(e => e.id === loadedChatId);
+      if (idx !== -1) {
+        saved[idx] = entry;
+      } else {
+        saved.unshift(entry);
+      }
+      setSavedChats(saved);
+      renderHistory();
+      return;
+    }
+
+    const id = Date.now();
     const entry = {
-      id: Date.now(),
+      id,
       title,
       date: new Date().toLocaleDateString(),
       messages: [...chatHistory]
     };
     saved.unshift(entry);
-    const trimmed = saved.slice(0, 20);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    setSavedChats(saved);
+    loadedChatId = id;
     renderHistory();
   }
 
@@ -1945,11 +2149,10 @@
       return;
     }
     saved.forEach(entry => {
-      const item = document.createElement('button');
+      const item = document.createElement('div');
       const title = String(entry?.title ?? 'Untitled chat');
       const date = String(entry?.date ?? '');
       item.className = 'history-item';
-      item.type = 'button';
 
       const info = document.createElement('div');
       info.className = 'history-info';
@@ -1966,33 +2169,87 @@
       info.appendChild(titleEl);
       info.appendChild(dateEl);
       item.appendChild(info);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'history-delete';
+      deleteBtn.setAttribute('aria-label', 'Delete chat');
+      deleteBtn.textContent = '✕';
+      deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteHistoryChat(entry.id);
+      };
+      item.appendChild(deleteBtn);
+
       item.onclick = () => loadChat(entry);
       list.appendChild(item);
     });
   }
 
   function loadChat(entry) {
-    chatHistory = [...entry.messages];
+    saveCurrentChat();
+    loadedChatId = entry.id || null;
+    chatHistory = [...(entry.messages || [])];
+    currentView = 'chat';
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
+    hideSuggestions();
     entry.messages.forEach(msg => {
       if (msg.role === 'user') appendMessage('user', msg.content);
-      else if (msg.role === 'assistant') appendMessage('ai', msg.content);
+      else if (msg.role === 'assistant') appendMessage('ai', msg.content, msg.sources || []);
     });
+    if (chatHistory.length > 0) document.getElementById('exportBtn').style.display = 'block';
     showToast('Chat loaded', 'success');
   }
 
   function clearHistory() {
     showConfirm('Clear all chat history?', () => {
       localStorage.removeItem(HISTORY_KEY);
+      resetCurrentChat();
       renderHistory();
       showToast('History cleared', 'success');
     });
   }
 
+  function deleteHistoryChat(id) {
+    const saved = getSavedChats();
+    const filtered = saved.filter(entry => entry.id !== id);
+    setSavedChats(filtered);
+
+    if (loadedChatId === id) {
+      resetCurrentChat();
+      currentView = 'chat';
+      if (isIndexed) {
+        fetchSuggestions();
+      } else {
+        document.getElementById('suggestionsBar').style.display = 'none';
+        const wrapper = document.getElementById('chatWrapper');
+        wrapper.innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M7 12h10"/>
+              <path d="M7 16h6"/>
+            </svg>
+            <h3>Ask your documents anything</h3>
+            <p>Upload PDF, TXT, or Markdown files, process them, then ask questions grounded in your sources.</p>
+            <div class="steps">
+              <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
+              <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
+            </div>
+          </div>`;
+      }
+    }
+
+    renderHistory();
+    showToast('Chat deleted', 'success');
+  }
+
   async function generateFlashcards(count = null) {
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
 
     if (!count) { showFlashcardSettings(); return; }
     document.getElementById('suggestionsBar').style.display = 'none';
@@ -2016,10 +2273,12 @@
     }
 
     btn.disabled = false;
-    btn.textContent = '⚡ Flashcards';
+    setIconButton(btn, 'list', 'Flashcards');
   }
 
   function showFlashcardSettings() {
+    currentView = 'flashcards';
+    hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
     wrapper.innerHTML = `
@@ -2078,6 +2337,8 @@
   let flashcardSourceCatalog = new Map();
 
   function showFlashcards(cards, sources = []) {
+    currentView = 'flashcards';
+    hideSuggestions();
     flashcardData = Array.isArray(cards) ? cards : [];
     flashcardSourceCatalog = new Map(
       (Array.isArray(sources) ? sources : [])
@@ -2116,8 +2377,8 @@
     const arrows = document.createElement('div');
     arrows.style.cssText = 'display:flex;gap:1rem;align-items:center;';
     arrows.innerHTML = `
-      <button class="btn-secondary" onclick="prevCard()" style="width:44px;height:44px;font-size:1.1rem;flex:none;">←</button>
-      <button class="btn-secondary" onclick="nextCard()" style="width:44px;height:44px;font-size:1.1rem;flex:none;">→</button>
+      <button class="btn-secondary" onclick="prevCard()" aria-label="Previous card" title="Previous card" style="width:44px;height:44px;font-size:1.1rem;flex:none;">←</button>
+      <button class="btn-secondary" onclick="nextCard()" aria-label="Next card" title="Next card" style="width:44px;height:44px;font-size:1.1rem;flex:none;">→</button>
     `;
     wrapper.appendChild(arrows);
 
@@ -2211,6 +2472,9 @@
   async function generateSummary() {
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
+
     document.getElementById('suggestionsBar').style.display = 'none';
 
     const btn = document.getElementById('summaryBtn');
@@ -2232,11 +2496,11 @@
     }
 
     btn.disabled = false;
-    btn.textContent = '📋 Summarize';
+    setIconButton(btn, 'clipboard', 'Summarize');
   }
 
   function renderSummarySources(sourceList, sourceIds, sourceCatalog) {
-    sourceList.innerHTML = '';
+    sourceList.replaceChildren();
     const ids = Array.isArray(sourceIds) ? sourceIds : [];
     const validSources = ids
       .map(id => sourceCatalog.get(id))
@@ -2276,17 +2540,58 @@
     });
   }
 
+  function stripJsonFence(text) {
+    const trimmed = String(text || '').trim();
+    const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return match ? match[1].trim() : trimmed;
+  }
+
+  function parseSummarySections(summary) {
+    if (Array.isArray(summary)) return summary;
+    if (Array.isArray(summary?.sections)) return summary.sections;
+    if (typeof summary === 'string') {
+      const text = stripJsonFence(summary);
+      try {
+        const parsed = JSON.parse(text);
+        return parseSummarySections(parsed);
+      } catch(e) {
+        const looksJson = /^[\[{]/.test(text);
+        return [{
+          heading: 'Overview',
+          text: looksJson ? 'Summary could not be parsed into readable sections. Try summarizing again.' : text,
+          source_ids: [],
+          bullets: []
+        }];
+      }
+    }
+    return [{
+      heading: 'Overview',
+      text: 'Summary could not be parsed into readable sections. Try summarizing again.',
+      source_ids: [],
+      bullets: []
+    }];
+  }
+
   function showSummary(summary, sources = []) {
+    currentView = 'summary';
+    hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.style.cssText = '';
-    wrapper.innerHTML = '';
+    wrapper.replaceChildren();
 
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
-    header.innerHTML = `
-      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex:none;white-space:nowrap;">← Back to chat</button>
-      <span style="font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;">Document Summary</span>
-    `;
+    const backButton = document.createElement('button');
+    backButton.className = 'btn-secondary';
+    backButton.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;white-space:nowrap;';
+    backButton.textContent = '← Back to chat';
+    backButton.addEventListener('click', backToChat);
+    header.appendChild(backButton);
+
+    const title = document.createElement('span');
+    title.style.cssText = 'font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;';
+    title.textContent = 'Document Summary';
+    header.appendChild(title);
     wrapper.appendChild(header);
 
     const content = document.createElement('div');
@@ -2301,9 +2606,7 @@
         .filter(source => source?.id)
         .map(source => [source.id, source])
     );
-    const sections = Array.isArray(summary?.sections)
-      ? summary.sections
-      : [{ heading: 'Summary', text: typeof summary === 'string' ? summary : '', source_ids: [], bullets: [] }];
+    const sections = parseSummarySections(summary);
 
     sections.forEach(section => {
       const sectionEl = document.createElement('section');
@@ -2356,25 +2659,43 @@
     wrapper.appendChild(content);
   }
 
+  function hideSuggestions() {
+    document.getElementById('suggestionsBar').style.display = 'none';
+  }
+
+  function canShowSuggestions() {
+    return isIndexed
+      && currentView === 'chat'
+      && chatHistory.length === 0
+      && loadedChatId === null;
+  }
+
+  let suggestionsPending = false;
+
   async function fetchSuggestions() {
+    if (!canShowSuggestions()) return;
     const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
     if (selected.length === 0) return;
+    if (suggestionsPending) return;
+    suggestionsPending = true;
     try {
       const res = await fetch('/api/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selected_docs: selected })
       });
+      if (!res.ok) { suggestionsPending = false; return; }
       const data = await res.json();
-      if (!res.ok || !data.questions?.length) return;
+      suggestionsPending = false;
+      if (!data.questions?.length) return;
       renderSuggestions(data.questions);
-    } catch(e) {}
+    } catch(e) { suggestionsPending = false; }
   }
 
   function renderSuggestions(questions) {
     const bar = document.getElementById('suggestionsBar');
     const row = document.getElementById('suggestionsRow');
-    if (chatHistory.length > 0) {
+    if (!canShowSuggestions()) {
       bar.style.display = 'none';
       return;
     }

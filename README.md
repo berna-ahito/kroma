@@ -1,86 +1,115 @@
-# Kroma — Ask. Learn. Know.
+<div align="center">
 
-AI that reads your documents, not the internet. Ask questions, generate flashcards, and quiz yourself from your own PDFs, TXT files, and Markdown notes. Built with FastAPI, LangChain, Groq, and RAG.
+# Kroma
+
+### Trust-first document intelligence for your own notes, papers, and files.
+
+Ask questions, generate study tools, and inspect the sources behind each answer across PDF, TXT, and Markdown documents.
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
+![LangChain RAG](https://img.shields.io/badge/LangChain%20%2F%20RAG-retrieval--grounded-1C3C3C)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-5B5BD6)
+![Groq](https://img.shields.io/badge/Groq-LLM%20inference-F55036)
+![Status](https://img.shields.io/badge/status-portfolio%20build-6B7280)
 
 **Live demo:** coming soon  
 **Built by:** [Claire Ahito](https://github.com/berna-ahito) · CIT-U Cebu · 2026
 
+</div>
+
 ---
+
+## Overview
+
+Kroma is a local-document RAG app built around trust: upload your files, ask a question, and review the retrieved source chunks that shaped the answer. It is designed for students, researchers, and builders who need document answers they can trace back to their own material.
+
+It currently supports **PDF, TXT, and Markdown** uploads. Text and Markdown files must be UTF-8 or UTF-8-SIG encoded.
+
+## Demo placeholders
+
+Real screenshots should be added at these paths when available. No mock screenshots are included.
+
+| Chat with sources |
+|---|
+| ![Kroma chat answer with source cards](assets/kroma-chat-sources.png) |
 
 ## What it does
 
-Most people drown in documents — reports, lecture slides, research papers. They highlight. They re-read. They still miss things.
-
-Kroma flips that. Upload your files, ask your question, and get an answer grounded in retrieved chunks from your actual documents, with sources shown in the app.
-
 | Feature | Description |
 |---|---|
-| 💬 Document Chat | Ask questions and get answers grounded in retrieved chunks from uploaded files |
-| ⚡ Flashcard Generator | Auto-generate Q&A cards with source links when available |
-| 🧠 Quiz Mode | AI-generated multiple choice questions — Easy, Medium, or Hard |
-| 📋 Smart Summary | One-click structured summary with key topics and takeaways |
-| 🎯 Source Cards | See retrieved chunks, pages, and relevance scores behind answers |
-| 🎯 Source Filtering | Choose exactly which documents to query |
-| ↓ Export to PDF | Save your full chat session as a clean PDF |
+| Document chat | Ask questions and get answers grounded in retrieved chunks from uploaded files |
+| Source cards | See retrieved chunks, document names, page/location labels, previews, and relevance scores |
+| Source filtering | Query all documents or limit retrieval to selected files |
+| Flashcards | Generate Q&A cards with source links when the source is available |
+| Quiz mode | Generate multiple-choice questions by difficulty, with source-linked explanations |
+| Smart summary | Create structured summaries with linked supporting chunks |
+| PDF export | Save a chat session as a clean PDF from the browser |
 
----
+## Why Kroma is different
 
-## Tech Stack
+- **Sources are part of the product.** Answers, flashcards, quizzes, and summaries can expose the chunks used to support them.
+- **Missing-info guard.** Source cards are hidden for greetings, unsupported answers, or cases without retrieved context.
+- **Source-linked study tools.** Generated study content uses internal source IDs, then strips invalid or model-invented IDs before rendering.
+- **Upload hardening.** Filenames are sanitized, path traversal is rejected, uploads are capped at 25 MB, and file content is checked against supported types.
+- **XSS-safe rendering.** AI Markdown output is sanitized before display, and most dynamic UI text is rendered through text nodes.
+- **Trust behavior evals.** Deterministic smoke evals cover source display rules, source ID sanitization, supported upload validation, and delete-path validation.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[PDF / TXT / Markdown upload] --> B[FastAPI upload validation]
+    B --> C[Text extraction]
+    C --> D[Chunking]
+    D --> E[SentenceTransformers embeddings]
+    E --> F[(ChromaDB local vector store)]
+
+    G[User question or study request] --> H[FastAPI API routes]
+    H --> I[LangChain retrieval]
+    F --> I
+    I --> J[Retrieved context + source catalog]
+    J --> K[Groq Llama model]
+    K --> L[Answer / flashcards / quiz / summary]
+    J --> M[Source cards and source-linked UI]
+    L --> M
+```
+
+## Tech stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Python · FastAPI |
 | AI / LLM | Groq API · Llama 4 Scout |
-| RAG Pipeline | LangChain · ChromaDB |
+| RAG pipeline | LangChain · ChromaDB |
 | Embeddings | BAAI/bge-small-en-v1.5 · SentenceTransformers |
-| Document Processing | PyPDF · UTF-8 text/Markdown |
-| Frontend | Vanilla HTML · CSS · JS |
-
----
-
-## How it works
-
-```
-PDF/TXT/Markdown Upload → Text Extraction → Chunking → Vector Embeddings → ChromaDB
-                                                                    ↓
-User Question → Semantic Search → Top K Chunks → Groq (Llama 4 Scout) → Answer
-```
-
-1. Supported files are split into chunks and converted into vector embeddings
-2. Embeddings are stored in ChromaDB (local vector database)
-3. When you ask a question, ChromaDB finds the most semantically similar chunks
-4. Those chunks are sent to Groq as context
-5. Groq answers from the retrieved context, and the app shows the source chunks used
-
-Uploads are limited to PDF, TXT, MD, and Markdown files up to 25 MB each. Text and Markdown uploads must be UTF-8 or UTF-8-SIG text.
-
----
+| Document processing | PyPDF · UTF-8 text/Markdown |
+| Frontend | Vanilla HTML · CSS · JavaScript |
+| Evals | Deterministic Python smoke evals |
 
 ## Running locally
 
-**Prerequisites:** Python 3.10+, Groq API key
+**Prerequisites:** Python 3.10+ and a Groq API key.
 
 ```powershell
-# Clone the repo
 git clone https://github.com/berna-ahito/kroma.git
 cd kroma
 
-# Create virtual environment
 py -m venv venv
 .\venv\Scripts\Activate.ps1
 
-# Install dependencies
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Create .env from the example, then add your Groq API key
 Copy-Item .env.example .env
 notepad .env
 
-# Run the app
 .\venv\Scripts\python.exe -m uvicorn api:app --reload --port 8000
 ```
 
-Visit `http://localhost:8000` for the landing page and `http://localhost:8000/app` for the app.
+Visit:
+
+- Landing page: `http://localhost:8000`
+- App: `http://localhost:8000/app`
 
 Hosted demos on free tiers may take a short cold start after inactivity.
 
@@ -90,38 +119,27 @@ Hosted demos on free tiers may take a short cold start after inactivity.
 .\venv\Scripts\python.exe evals\trust_behavior.py
 ```
 
----
-
 ## Project structure
 
-```
+```text
 kroma/
-├── api.py            # FastAPI backend — routes, upload, chat, process
-├── rag.py            # RAG pipeline — retrieval, Groq integration
-├── ingest.py         # Document ingestion — chunking, embeddings, ChromaDB
+├── api.py              # FastAPI routes, upload handling, chat and study APIs
+├── rag.py              # Retrieval, source handling, Groq generation
+├── ingest.py           # Document loading, chunking, embeddings, ChromaDB writes
 ├── static/
-│   ├── index.html    # Main app UI
-│   └── landing.html  # Landing page
+│   ├── landing.html    # Landing page
+│   └── index.html      # Main app UI
+├── evals/
+│   └── trust_behavior.py
 ├── requirements.txt
-└── CLAUDE.md         # Claude Code context file
+└── README.md
 ```
 
----
+## Portfolio context
 
-## Why I built this
+Kroma is Build 1 of my AI engineering portfolio. It demonstrates a full RAG loop: hardened uploads, local indexing, vector retrieval, LLM-backed answers, source-aware UI, and deterministic trust behavior checks.
 
-This is Build 1 of my AI engineering portfolio. I am a 4th-year BSIT student at CIT-U Cebu targeting AI and automation roles.
-
-Kroma demonstrates:
-- End-to-end RAG pipeline implementation from scratch
-- FastAPI backend with document upload handling and JSON API responses
-- Vector database integration with ChromaDB
-- LLM integration via Groq API
-- Clean product thinking — landing page, features, UX
-
-**Next builds:** Lead Qualification Agent (n8n + Groq) · Content Repurposing Pipeline · Voice AI Agent (VAPI) · Multi-Agent Research Writer (LangGraph)
-
----
+**Next builds:** Lead Qualification Agent · Content Repurposing Pipeline · Voice AI Agent · Multi-Agent Research Writer
 
 ## Contact
 

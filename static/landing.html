@@ -467,9 +467,16 @@
   .feature-card:hover { background: var(--surface); }
 
   .feature-icon {
-    font-size: 1.5rem;
+    width: 28px;
+    height: 28px;
     margin-bottom: 1rem;
     display: block;
+    color: var(--gold);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .feature-title {
@@ -692,7 +699,7 @@
   </h1>
 
   <p class="hero-sub">
-    Kroma turns your PDF, TXT, and Markdown files into an intelligent knowledge base. Ask questions, generate flashcards, quiz yourself — all from your own files.
+    Kroma turns PDF, TXT, and Markdown files into a source-grounded study tool. Ask questions, summarize, make flashcards, and quiz yourself from your own files.
   </p>
 
   <div class="hero-actions">
@@ -712,7 +719,7 @@
         <div class="preview-dot" style="background:#ef4444"></div>
         <div class="preview-dot" style="background:#f59e0b"></div>
         <div class="preview-dot" style="background:#22c55e"></div>
-        <div class="preview-url">localhost:8000 — Kroma</div>
+        <div class="preview-url">Kroma workspace</div>
       </div>
       <div class="preview-screen">
         <div class="preview-metrics">
@@ -732,11 +739,11 @@
         <div class="preview-chat">
           <div class="preview-msg user">
             <div class="preview-msg-label">YOU</div>
-            What is the difference between cron.allow and cron.deny?
+            Summarize the trust checks from my study guide.
           </div>
           <div class="preview-msg ai">
             <div class="preview-msg-label">K</div>
-            cron.allow is a whitelist — only listed users can use cron. cron.deny is a blacklist — listed users are denied. When both exist, cron.allow takes priority and cron.deny is ignored.
+            Kroma cites source chunks, shows filenames and locations, and flags unsupported answers when your files do not provide enough evidence.
           </div>
         </div>
       </div>
@@ -756,32 +763,62 @@
 
   <div class="features-grid reveal">
     <div class="feature-card">
-      <span class="feature-icon">💬</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M21 12a8 8 0 0 1-8 8H7l-4 2 1.5-4A8 8 0 1 1 21 12z"/>
+      </svg>
       <div class="feature-title">Document Chat</div>
-      <div class="feature-desc">Ask anything. Get answers from your files only. No guessing, no internet, no hallucination.</div>
+      <div class="feature-desc">Ask anything. Get source-grounded answers from selected files, with citations and no internet search.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">⚡</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M8 6h11"/>
+        <path d="M8 12h11"/>
+        <path d="M8 18h11"/>
+        <path d="M4 6h.01"/>
+        <path d="M4 12h.01"/>
+        <path d="M4 18h.01"/>
+      </svg>
       <div class="feature-title">Flashcards</div>
       <div class="feature-desc">Turn any document into a deck of Q&A cards instantly. Flip to reveal, review at your own pace.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">🧠</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5"/>
+        <path d="M12 17h.01"/>
+      </svg>
       <div class="feature-title">Quiz Mode</div>
       <div class="feature-desc">Test yourself with AI-generated multiple choice questions. Easy, Medium, or Hard. Scored with explanations.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">📋</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M9 4h6"/>
+        <path d="M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2"/>
+        <path d="M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2"/>
+        <path d="M9 13h6"/>
+        <path d="M9 17h4"/>
+      </svg>
       <div class="feature-title">Smart Summary</div>
       <div class="feature-desc">One click gets you a clean structured summary. Overview, key topics, and main takeaways ready in seconds.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">🎯</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="8"/>
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v3"/>
+        <path d="M12 19v3"/>
+        <path d="M2 12h3"/>
+        <path d="M19 12h3"/>
+      </svg>
       <div class="feature-title">Source Filtering</div>
       <div class="feature-desc">Pick exactly which files to query. Kroma only searches what you choose.</div>
     </div>
     <div class="feature-card">
-      <span class="feature-icon">↓</span>
+      <svg class="feature-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3v12"/>
+        <path d="m7 10 5 5 5-5"/>
+        <path d="M5 21h14"/>
+      </svg>
       <div class="feature-title">Export to PDF</div>
       <div class="feature-desc">Save your entire chat session as a clean PDF. Perfect for notes, reports, or sharing.</div>
     </div>
@@ -803,7 +840,7 @@
         <p style="font-size:0.75rem;font-family:'DM Mono',monospace;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem;">What you experience</p>
         <div class="stack-grid" style="margin-bottom:1.5rem;">
           <div class="stack-pill"><span class="stack-pill-dot"></span>Instant answers from your files</div>
-          <div class="stack-pill"><span class="stack-pill-dot"></span>No internet. No guessing.</div>
+          <div class="stack-pill"><span class="stack-pill-dot"></span>Selected files. Cited sources.</div>
           <div class="stack-pill"><span class="stack-pill-dot"></span>Ask. Summarize. Quiz. Learn.</div>
         </div>
         <p style="font-size:0.75rem;font-family:'DM Mono',monospace;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem;">What powers it</p>

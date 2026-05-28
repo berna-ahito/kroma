@@ -284,6 +284,96 @@ def generate_quiz(context: str, difficulty: str = "medium", count: int = 8, sour
                 pass
         return []
 
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return stripped
+
+
+def _summary_json_candidates(text: str) -> list:
+    stripped = _strip_json_fence(text)
+    candidates = [stripped]
+
+    for match in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL):
+        candidate = match.group(1).strip()
+        if candidate not in candidates:
+            candidates.append(candidate)
+
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = stripped.find(opener)
+        end = stripped.rfind(closer)
+        if start != -1 and end != -1 and start < end:
+            candidate = stripped[start : end + 1].strip()
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+    return candidates
+
+
+def _summary_sections_from_payload(payload, depth: int = 0):
+    if depth > 3:
+        return None
+    if isinstance(payload, dict):
+        sections = payload.get("sections")
+        if isinstance(sections, list):
+            return sections
+        inner = payload.get("summary")
+        if isinstance(inner, dict):
+            inner_sections = inner.get("sections")
+            if isinstance(inner_sections, list):
+                return inner_sections
+        if "heading" in payload:
+            return [payload]
+        return None
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, str):
+        for candidate in _summary_json_candidates(payload):
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            sections = _summary_sections_from_payload(parsed, depth + 1)
+            if isinstance(sections, list):
+                return sections
+    return None
+
+
+def _summary_fallback_sections(raw="", source_text="") -> list:
+    if source_text:
+        parts = re.split(r"\[Source ID: [^\]]+\]\s*", source_text.strip())
+        useful = [
+            re.split(r"(?<=[.!])\s+", p.strip(), maxsplit=1)[0][:200]
+            for p in parts if p.strip()
+        ]
+        if useful:
+            return [
+                {
+                    "heading": "Overview",
+                    "text": " ".join(useful[:3]),
+                    "source_ids": [],
+                    "bullets": [],
+                }
+            ]
+    return [
+        {
+            "heading": "Overview",
+            "text": "Summary could not be parsed into readable sections. Try summarizing again.",
+            "source_ids": [],
+            "bullets": [],
+        }
+    ]
+
+
+def normalize_summary_sections(payload, source_text="") -> list:
+    sections = _summary_sections_from_payload(payload)
+    if isinstance(sections, list) and sections:
+        return sections
+    return _summary_fallback_sections(payload, source_text)
+
+
 def generate_summary(context: str, source_ids: list | None = None) -> list:
     allowed_source_ids = source_ids or []
     source_instruction = ""
@@ -320,27 +410,7 @@ def generate_summary(context: str, source_ids: list | None = None) -> list:
         temperature=0.2,
     )
     raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'```json|```', '', raw).strip()
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict) and isinstance(parsed.get("sections"), list):
-            return parsed["sections"]
-        return parsed
-    except Exception:
-        match = re.search(r'\[.*\]', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        return [
-            {
-                "heading": "Overview",
-                "text": raw,
-                "source_ids": [],
-                "bullets": [],
-            }
-        ]
+    return normalize_summary_sections(raw, context)
 
 def generate_suggestions(context: str) -> list:
     messages = [

@@ -17,6 +17,7 @@ import api as kroma_api  # noqa: E402
 from rag import (  # noqa: E402
     build_source_catalog,
     build_source_linked_context,
+    normalize_summary_sections,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
     sanitize_summary_source_ids,
@@ -192,6 +193,84 @@ SUMMARY_SECTIONS = [
         ],
     },
 ]
+
+
+SUMMARY_JSON_OBJECT = {
+    "sections": [
+        {
+            "heading": "Overview",
+            "text": "Kroma summarizes local documents.",
+            "source_ids": ["s1"],
+            "bullets": [],
+        }
+    ]
+}
+
+SUMMARY_JSON_ARRAY = [
+    {
+        "heading": "Overview",
+        "text": "Kroma summarizes local documents.",
+        "source_ids": ["s1"],
+        "bullets": [],
+    }
+]
+
+SUMMARY_JSON_STRING = (
+    '{"sections":[{"heading":"Overview","text":"Kroma summarizes local documents.",'
+    '"source_ids":["s1"],"bullets":[]}]}'
+)
+
+SUMMARY_FENCED_JSON = """```json
+{"sections":[{"heading":"Overview","text":"Kroma summarizes local documents.","source_ids":["s1"],"bullets":[]}]}
+```"""
+
+SUMMARY_JSON_WRAPPED = {
+    "summary": {
+        "sections": [
+            {
+                "heading": "Overview",
+                "text": "Kroma summarizes local documents.",
+                "source_ids": ["s1"],
+                "bullets": [],
+            }
+        ]
+    }
+}
+
+SUMMARY_TEXT_BEFORE_AFTER = (
+    "Here is a summary of your documents:\n"
+    '[{"heading":"Overview","text":"Kroma summarizes local documents.",'
+    '"source_ids":["s1"],"bullets":[]}]\n'
+    "Let me know if you need more detail."
+)
+
+SUMMARY_JSON_ARRAY_WITH_BULLETS = [
+    {
+        "heading": "Overview",
+        "text": "Kroma is a local RAG assistant.",
+        "source_ids": ["s1"],
+        "bullets": [
+            {"text": "Processes documents locally", "source_ids": ["s1"]},
+            {"text": "Uses ChromaDB for storage", "source_ids": ["s2"]},
+        ],
+    },
+    {
+        "heading": "Key Topics",
+        "text": "",
+        "source_ids": [],
+        "bullets": [
+            {"text": "Document chunking", "source_ids": ["s2"]},
+        ],
+    },
+]
+
+
+FALLBACK_SOURCE_TEXT = (
+    "[Source ID: s1]\nKroma is a local document-RAG assistant. "
+    "It processes PDFs, text files, and markdown.\n\n"
+    "[Source ID: s2]\nThe system uses ChromaDB for vector storage. "
+    "Embeddings are generated via SentenceTransformers."
+)
 
 
 def _expect_http_error(name: str, status_code: int, func, failures: list) -> None:
@@ -443,6 +522,55 @@ def main() -> int:
         print("FAIL: summary invalid bullet source_ids stripped")
     else:
         print("PASS: summary invalid bullet source_ids stripped")
+
+    expected_summary = SUMMARY_JSON_ARRAY
+    summary_cases = [
+        ("summary JSON object wrapper parsed", SUMMARY_JSON_OBJECT, expected_summary),
+        ("summary JSON array parsed", SUMMARY_JSON_ARRAY, expected_summary),
+        ("summary JSON string parsed", SUMMARY_JSON_STRING, expected_summary),
+        ("summary fenced JSON parsed", SUMMARY_FENCED_JSON, expected_summary),
+        ("summary wrapped in summary key parsed", SUMMARY_JSON_WRAPPED, expected_summary),
+        ("summary text before/after JSON parsed", SUMMARY_TEXT_BEFORE_AFTER, expected_summary),
+    ]
+    for name, payload, expected in summary_cases:
+        parsed_summary = normalize_summary_sections(payload)
+        if parsed_summary != expected:
+            failures.append((name, expected, parsed_summary))
+            print(f"FAIL: {name}")
+        else:
+            print(f"PASS: {name}")
+
+    bullets_in = SUMMARY_JSON_ARRAY_WITH_BULLETS
+    bullets_out = normalize_summary_sections(bullets_in)
+    if bullets_out != bullets_in:
+        failures.append(("summary JSON array with bullets parsed", bullets_in, bullets_out))
+        print("FAIL: summary JSON array with bullets parsed")
+    else:
+        print("PASS: summary JSON array with bullets parsed")
+
+    fallback_result = normalize_summary_sections("not valid json at all", FALLBACK_SOURCE_TEXT)
+    fallback_has_text = (
+        isinstance(fallback_result, list)
+        and len(fallback_result) == 1
+        and "Kroma" in fallback_result[0].get("text", "")
+    )
+    if not fallback_has_text:
+        failures.append(("summary fallback uses source snippets", "text contains Kroma", fallback_result))
+        print("FAIL: summary fallback uses source snippets")
+    else:
+        print("PASS: summary fallback uses source snippets")
+
+    empty_fallback = normalize_summary_sections("")
+    empty_has_fallback = (
+        isinstance(empty_fallback, list)
+        and len(empty_fallback) == 1
+        and "could not be parsed" in empty_fallback[0].get("text", "")
+    )
+    if not empty_has_fallback:
+        failures.append(("summary empty fallback shows guidance", "could not be parsed", empty_fallback))
+        print("FAIL: summary empty fallback shows guidance")
+    else:
+        print("PASS: summary empty fallback shows guidance")
 
     linked_context = build_source_linked_context(
         "[Source: sample.pdf, page 2]\nKroma is local.\n\n[Source: other.pdf, page 5]\nOther text.",

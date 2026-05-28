@@ -28,6 +28,7 @@ from rag import (
     generate_quiz,
     generate_suggestions,
     generate_summary,
+    normalize_summary_sections,
     retrieve_chunks,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
@@ -231,6 +232,8 @@ def summary(req: SummaryRequest):
         source_ids=[source["id"] for source in source_catalog],
     )
     sections = sanitize_summary_source_ids(sections, source_catalog)
+    if not sections:
+        sections = sanitize_summary_source_ids(normalize_summary_sections("", source_context), source_catalog)
     return {"summary": {"sections": sections}, "sources": source_catalog}
 
 @app.post("/api/suggest")
