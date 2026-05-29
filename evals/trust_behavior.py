@@ -25,8 +25,12 @@ import rag as kroma_rag  # noqa: E402
 from rag import (  # noqa: E402
     build_source_catalog,
     build_source_linked_context,
+    business_context_is_relevant,
+    business_needs_human_review,
+    normalize_business_copilot_output,
     normalize_summary_sections,
     retrieve_chunks,
+    sanitize_business_copilot_source_ids,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
     sanitize_summary_source_ids,
@@ -749,6 +753,264 @@ def run_json_parser_evals(failures: list) -> None:
         print("PASS: summary string bullet becomes []")
 
 
+BUSINESS_COPILOT_SOURCES = [
+    {"id": "s1", "source": "doc1.pdf", "score": 91},
+    {"id": "s2", "source": "doc2.pdf", "score": 82},
+]
+
+
+BUSINESS_COPILOT_NORMALIZED = {
+    "verified_facts": [
+        {"text": "Kroma is a document assistant.", "source_ids": ["s1", "s2"]},
+        {"text": "Made up fact.", "source_ids": ["s999", "invented"]},
+    ],
+    "suggested_draft": "Based on our documents, Kroma is a document assistant.",
+    "missing_information": ["Revenue figures not available."],
+    "sources_used": ["s1", "s999"],
+}
+
+
+BUSINESS_COPILOT_SANITIZED = {
+    "verified_facts": [
+        {"text": "Kroma is a document assistant.", "source_ids": ["s1", "s2"]},
+    ],
+    "suggested_draft": "Based on our documents, Kroma is a document assistant.",
+    "missing_information": ["Revenue figures not available.", "Made up fact."],
+    "sources_used": ["s1"],
+}
+
+
+def run_business_copilot_evals(failures: list) -> None:
+    result = sanitize_business_copilot_source_ids(BUSINESS_COPILOT_NORMALIZED, BUSINESS_COPILOT_SOURCES)
+    if result != BUSINESS_COPILOT_SANITIZED:
+        failures.append(("business copilot invalid source IDs removed", BUSINESS_COPILOT_SANITIZED, result))
+        print("FAIL: business copilot invalid source IDs removed")
+    else:
+        print("PASS: business copilot invalid source IDs removed")
+
+    if "Made up fact." not in result.get("missing_information", []):
+        failures.append(("business copilot unsourced facts moved to missing_information", "Made up fact. in missing_information", result))
+        print("FAIL: business copilot unsourced facts moved to missing_information")
+    else:
+        print("PASS: business copilot unsourced facts moved to missing_information")
+
+    hr = business_needs_human_review("draft_reply", "customer", "What are our terms?", [])
+    if hr["required"] is not True or not hr["reasons"]:
+        failures.append(("customer + draft_reply requires human review", "required with reasons", hr))
+        print("FAIL: customer + draft_reply requires human review")
+    else:
+        print("PASS: customer + draft_reply requires human review")
+
+    hr = business_needs_human_review("answer_from_sources", "internal_team", "What does Kroma do?", [])
+    if hr["required"] is not False or hr["reasons"]:
+        failures.append(("internal_team + answer_from_sources can avoid human review", "not required", hr))
+        print("FAIL: internal_team + answer_from_sources can avoid human review")
+    else:
+        print("PASS: internal_team + answer_from_sources can avoid human review")
+
+    hr = business_needs_human_review("answer_from_sources", "internal_team", "What does Kroma do?", ["No relevant information"])
+    if hr["required"] is not True:
+        failures.append(("missing context always requires human review", "required", hr))
+        print("FAIL: missing context always requires human review")
+    else:
+        print("PASS: missing context always requires human review")
+
+    sensitive_texts = [
+        "What is our pricing for enterprise?",
+        "What are the legal terms?",
+        "Share financial projections.",
+        "Draft a reply about the complaint.",
+        "What is the refund policy?",
+        "Summarize contract terms.",
+        "What is the employee salary range?",
+    ]
+    for text in sensitive_texts:
+        hr = business_needs_human_review("answer_from_sources", "internal_team", text, [])
+        if hr["required"] is not True:
+            failures.append((f"business copilot sensitive keyword triggers review: '{text}'", "required", hr))
+            print(f"FAIL: business copilot sensitive keyword triggers review: '{text}'")
+        else:
+            print(f"PASS: business copilot sensitive keyword triggers review: '{text}'")
+
+    original_retrieve = kroma_api.retrieve_chunks
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: ("", [])
+
+        os.environ["KROMA_DEMO_KEY"] = "bc-noctx"
+        try:
+            response = client.post(
+                "/api/business-copilot",
+                headers={"X-Kroma-Demo-Key": "bc-noctx"},
+                json={
+                    "task_type": "answer_from_sources",
+                    "audience": "internal_team",
+                    "request": "What is the revenue?",
+                    "selected_docs": ["doc1.pdf"],
+                },
+            )
+            expected_noctx = {
+                "result": {
+                    "verified_facts": [],
+                    "suggested_draft": "",
+                    "missing_information": ["No relevant information was found in the selected documents."],
+                    "needs_human_review": {"required": True, "reasons": ["No source-grounded context available"]},
+                    "sources_used": [],
+                },
+                "sources": [],
+            }
+            if response.status_code != 200 or response.json() != expected_noctx:
+                failures.append(("business copilot no-context returns deterministic JSON", expected_noctx, (response.status_code, response.json())))
+                print("FAIL: business copilot no-context returns deterministic JSON")
+            else:
+                print("PASS: business copilot no-context returns deterministic JSON")
+        finally:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
+
+    client2 = TestClient(kroma_api.app, raise_server_exceptions=False)
+    original_retrieve2 = kroma_api.retrieve_chunks
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: ("", [])
+        os.environ["KROMA_DEMO_KEY"] = "bc-demo-protect"
+        try:
+            missing = client2.post("/api/business-copilot", json={
+                "task_type": "answer_from_sources", "audience": "internal_team",
+                "request": "test", "selected_docs": [],
+            })
+            wrong = client2.post("/api/business-copilot", headers={"X-Kroma-Demo-Key": "wrong"}, json={
+                "task_type": "answer_from_sources", "audience": "internal_team",
+                "request": "test", "selected_docs": [],
+            })
+            correct = client2.post("/api/business-copilot", headers={"X-Kroma-Demo-Key": "bc-demo-protect"}, json={
+                "task_type": "answer_from_sources", "audience": "internal_team",
+                "request": "test", "selected_docs": [],
+            })
+            if missing.status_code != 401 or wrong.status_code != 401:
+                failures.append(("business copilot requires demo key when configured", "401/401", (missing.status_code, wrong.status_code)))
+                print("FAIL: business copilot requires demo key when configured")
+            else:
+                print("PASS: business copilot requires demo key when configured")
+            if correct.status_code == 401:
+                failures.append(("business copilot correct demo key allowed", "non-401", correct.status_code))
+                print("FAIL: business copilot correct demo key allowed")
+            else:
+                body = correct.json()
+                if "result" not in body or "needs_human_review" not in body.get("result", {}):
+                    failures.append(("business copilot correct demo key returns expected body", "result with needs_human_review", body))
+                    print("FAIL: business copilot correct demo key returns expected body")
+                else:
+                    print("PASS: business copilot correct demo key allowed and returns expected body")
+        finally:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+
+        no_key = client2.post("/api/business-copilot", json={
+            "task_type": "answer_from_sources", "audience": "internal_team",
+            "request": "test", "selected_docs": [],
+        })
+        if no_key.status_code == 401:
+            failures.append(("business copilot no key required when unset", "200", no_key.status_code))
+            print("FAIL: business copilot no key required when unset")
+        else:
+            print("PASS: business copilot no key required when unset")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve2
+
+    hr_deleg = business_needs_human_review("summarize_for_team", "internal_team", "Summarize the key points.", [])
+    if hr_deleg["required"] is not False:
+        failures.append(("internal_team + summarize_for_team can avoid human review", "not required", hr_deleg))
+        print("FAIL: internal_team + summarize_for_team can avoid human review")
+    else:
+        print("PASS: internal_team + summarize_for_team can avoid human review")
+
+    for aud in ("customer", "partner", "investor", "distributor", "other"):
+        hr_aud = business_needs_human_review("answer_from_sources", aud, "What does Kroma do?", [])
+        if hr_aud["required"] is not True:
+            failures.append((f"audience '{aud}' always requires human review", "required", hr_aud))
+            print(f"FAIL: audience '{aud}' always requires human review")
+        else:
+            print(f"PASS: audience '{aud}' always requires human review")
+
+    for ttype in ("draft_reply", "risk_check"):
+        hr_task = business_needs_human_review(ttype, "internal_team", "What does Kroma do?", [])
+        if hr_task["required"] is not True:
+            failures.append((f"task_type '{ttype}' always requires human review", "required", hr_task))
+            print(f"FAIL: task_type '{ttype}' always requires human review")
+        else:
+            print(f"PASS: task_type '{ttype}' always requires human review")
+
+    hr_extract = business_needs_human_review("extract_action_items", "internal_team", "Extract action items from meeting notes.", [])
+    if hr_extract["required"] is not True:
+        failures.append(("extract_action_items + internal_team requires human review", "required", hr_extract))
+        print("FAIL: extract_action_items + internal_team requires human review")
+    else:
+        print("PASS: extract_action_items + internal_team requires human review")
+
+    plural_sensitive = ["product claims", "complaints", "refunds", "negotiations"]
+    for text in plural_sensitive:
+        hr_plural = business_needs_human_review("answer_from_sources", "internal_team", f"What about {text}?", [])
+        if hr_plural["required"] is not True:
+            failures.append((f"plural sensitive term triggers review: '{text}'", "required", hr_plural))
+            print(f"FAIL: plural sensitive term triggers review: '{text}'")
+        else:
+            print(f"PASS: plural sensitive term triggers review: '{text}'")
+
+    # ── Malformed / empty model output evals ──
+    client3 = TestClient(kroma_api.app, raise_server_exceptions=False)
+    original_retrieve3 = kroma_api.retrieve_chunks
+    original_generate3 = kroma_api.generate_business_copilot_output
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: (
+            "[Source: doc1.pdf, Page 1]\nKroma is a document assistant.",
+            [{"rank": 1, "source": "doc1.pdf", "page": 1, "file_type": "pdf", "location_type": "page", "location_label": "Page 1", "chunk_id": "doc1-1-1", "doc_chunk_id": "doc1.pdf:1:1", "score": 90, "distance": 0.11, "preview": "Kroma is a document assistant."}],
+        )
+
+        os.environ["KROMA_DEMO_KEY"] = "bc-malformed"
+
+        kroma_api.generate_business_copilot_output = lambda *args, **kwargs: "not valid json at all"
+        resp = client3.post("/api/business-copilot", headers={"X-Kroma-Demo-Key": "bc-malformed"}, json={
+            "task_type": "answer_from_sources", "audience": "internal_team",
+            "request": "What is Kroma?", "selected_docs": [],
+        })
+        result = resp.json()["result"]
+        required_ok = result["needs_human_review"]["required"] is True
+        reason_ok = any("Model output could not be verified" in r for r in result["needs_human_review"].get("reasons", []))
+        if not required_ok or not reason_ok:
+            failures.append(("malformed model JSON requires human review", "required with 'Model output could not be verified'", result["needs_human_review"]))
+            print("FAIL: malformed model JSON requires human review")
+        else:
+            print("PASS: malformed model JSON requires human review")
+
+        kroma_api.generate_business_copilot_output = lambda *args, **kwargs: "{}"
+        resp = client3.post("/api/business-copilot", headers={"X-Kroma-Demo-Key": "bc-malformed"}, json={
+            "task_type": "answer_from_sources", "audience": "internal_team",
+            "request": "What is Kroma?", "selected_docs": [],
+        })
+        result = resp.json()["result"]
+        if result["needs_human_review"]["required"] is not True or not result.get("missing_information"):
+            failures.append(("empty model JSON requires human review", "required with fallback missing_information", result))
+            print("FAIL: empty model JSON requires human review")
+        else:
+            print("PASS: empty model JSON requires human review")
+
+        kroma_api.generate_business_copilot_output = lambda *args, **kwargs: '{"verified_facts":[],"suggested_draft":"","missing_information":[]}'
+        resp = client3.post("/api/business-copilot", headers={"X-Kroma-Demo-Key": "bc-malformed"}, json={
+            "task_type": "answer_from_sources", "audience": "internal_team",
+            "request": "What is Kroma?", "selected_docs": [],
+        })
+        result = resp.json()["result"]
+        if result["needs_human_review"]["required"] is not True or not result.get("missing_information"):
+            failures.append(("empty normalized output requires human review", "required with fallback missing_information", result))
+            print("FAIL: empty normalized output requires human review")
+        else:
+            print("PASS: empty normalized output requires human review")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve3
+        kroma_api.generate_business_copilot_output = original_generate3
+        os.environ.pop("KROMA_DEMO_KEY", None)
+
+
 def main() -> int:
     failures = []
     for case in CASES:
@@ -907,6 +1169,7 @@ def main() -> int:
     run_deleted_only_query_eval(failures)
     run_demo_key_evals(failures)
     run_request_bound_evals(failures)
+    run_business_copilot_evals(failures)
 
     if failures:
         print("\nFailures:")
