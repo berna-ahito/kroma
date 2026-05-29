@@ -1,3 +1,4 @@
+import gc
 import json
 import hmac
 import os
@@ -417,7 +418,7 @@ def process(request: Request):
         stats = ingest_documents()
         return {"success": True, "stats": stats}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail="Document processing failed.")
 
 
 class FlashcardRequest(BaseModel):
@@ -537,7 +538,6 @@ def delete_doc(filename: str, request: Request = None):
 @app.delete("/api/library")
 def clear_library(request: Request):
     _require_demo_key(request)
-    import gc
     gc.collect()
     for path in (CHROMA_PATH, STATS_FILE):
         try:
@@ -545,8 +545,8 @@ def clear_library(request: Request):
                 shutil.rmtree(path)
             elif path.is_file():
                 path.unlink(missing_ok=True)
-        except Exception as e:
-            print(f"Could not delete {path}: {e}")
+        except Exception:
+            continue
     for pdf in [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]:
         try:
             pdf.unlink(missing_ok=True)
@@ -593,7 +593,7 @@ def business_copilot(req: BusinessCopilotRequest, request: Request):
         return BUSINESS_NO_CONTEXT_RESPONSE
 
     raw = generate_business_copilot_output(task_type, audience, request_text, source_context, source_catalog)
-    normalized = normalize_business_copilot_output(raw, source_context)
+    normalized = normalize_business_copilot_output(raw)
     sanitized = sanitize_business_copilot_source_ids(normalized, source_catalog)
 
     is_empty_output = (

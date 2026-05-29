@@ -725,7 +725,7 @@ def generate_business_copilot_output(task_type, audience, request_text, source_c
     return _parse_business_copilot_response(response.choices[0].message.content)
 
 
-def normalize_business_copilot_output(payload, source_context=""):
+def normalize_business_copilot_output(payload):
     if not isinstance(payload, dict):
         payload = {}
     result = {

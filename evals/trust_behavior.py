@@ -1177,7 +1177,7 @@ def main() -> int:
             print(f"- {name}: expected {expected}, got {actual}")
         return 1
 
-    print(f"\n{len(CASES)}/{len(CASES)} trust behavior evals passed.")
+    print("\nAll trust behavior evals passed.")
     return 0
 
 
