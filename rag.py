@@ -260,6 +260,24 @@ def query_documents(question: str, chat_history: list | None = None, n_results: 
     return answer, sources
 
 
+def _parse_json_array_response(raw: str) -> list:
+    stripped = raw.strip()
+    stripped = re.sub(r'```json|```', '', stripped).strip()
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        pass
+    match = re.search(r'\[.*\]', stripped, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except Exception:
+            pass
+    return []
+
+
 def generate_quiz(context: str, difficulty: str = "medium", count: int = 8, source_ids: list | None = None) -> list:
     difficulty_instruction = {
         "easy": "Questions must be simple recall — 'What is X?' or 'What does X do?' format. Wrong answer choices must be obviously incorrect.",
@@ -297,18 +315,8 @@ def generate_quiz(context: str, difficulty: str = "medium", count: int = 8, sour
         messages=messages,
         temperature=0.4,
     )
-    raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'```json|```', '', raw).strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        match = re.search(r'\[.*\]', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        return []
+    return _parse_json_array_response(response.choices[0].message.content)
+
 
 def _strip_json_fence(text: str) -> str:
     stripped = text.strip()
@@ -459,18 +467,8 @@ def generate_suggestions(context: str) -> list:
         messages=messages,
         temperature=0.4,
     )
-    raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'```json|```', '', raw).strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        match = re.search(r'\[.*\]', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        return []
+    return _parse_json_array_response(response.choices[0].message.content)
+
 
 def build_source_catalog(sources: list) -> list:
     catalog = []
@@ -499,8 +497,24 @@ def build_source_linked_context(context: str, source_catalog: list) -> str:
     return "\n\n".join(linked_parts)
 
 
+def _valid_source_ids(source_catalog) -> set:
+    return {source["id"] for source in source_catalog}
+
+
+def _sanitize_source_ids(raw_source_ids, valid_ids: set) -> list:
+    if isinstance(raw_source_ids, str):
+        raw_source_ids = [raw_source_ids]
+    if not isinstance(raw_source_ids, list):
+        return []
+    result = []
+    for sid in raw_source_ids:
+        if isinstance(sid, str) and sid in valid_ids and sid not in result:
+            result.append(sid)
+    return result
+
+
 def sanitize_flashcards_source_ids(cards: list, source_catalog: list) -> list:
-    valid_ids = {source["id"] for source in source_catalog}
+    valid_ids = _valid_source_ids(source_catalog)
     sanitized = []
     if not isinstance(cards, list):
         return sanitized
@@ -513,29 +527,18 @@ def sanitize_flashcards_source_ids(cards: list, source_catalog: list) -> list:
         if not isinstance(question, str) or not isinstance(answer, str):
             continue
 
-        raw_source_ids = card.get("source_ids", [])
-        if isinstance(raw_source_ids, str):
-            raw_source_ids = [raw_source_ids]
-        if not isinstance(raw_source_ids, list):
-            raw_source_ids = []
-
-        source_ids = []
-        for source_id in raw_source_ids:
-            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
-                source_ids.append(source_id)
-
         sanitized.append(
             {
                 "question": question,
                 "answer": answer,
-                "source_ids": source_ids,
+                "source_ids": _sanitize_source_ids(card.get("source_ids", []), valid_ids),
             }
         )
     return sanitized
 
 
 def sanitize_quiz_source_ids(questions: list, source_catalog: list) -> list:
-    valid_ids = {source["id"] for source in source_catalog}
+    valid_ids = _valid_source_ids(source_catalog)
     sanitized = []
     if not isinstance(questions, list):
         return sanitized
@@ -556,31 +559,20 @@ def sanitize_quiz_source_ids(questions: list, source_catalog: list) -> list:
         ):
             continue
 
-        raw_source_ids = question.get("source_ids", [])
-        if isinstance(raw_source_ids, str):
-            raw_source_ids = [raw_source_ids]
-        if not isinstance(raw_source_ids, list):
-            raw_source_ids = []
-
-        source_ids = []
-        for source_id in raw_source_ids:
-            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
-                source_ids.append(source_id)
-
         sanitized.append(
             {
                 "question": question_text,
                 "choices": choices,
                 "answer": answer,
                 "explanation": explanation,
-                "source_ids": source_ids,
+                "source_ids": _sanitize_source_ids(question.get("source_ids", []), valid_ids),
             }
         )
     return sanitized
 
 
 def sanitize_summary_source_ids(sections: list, source_catalog: list) -> list:
-    valid_ids = {source["id"] for source in source_catalog}
+    valid_ids = _valid_source_ids(source_catalog)
     sanitized = []
     if not isinstance(sections, list):
         return sanitized
@@ -596,16 +588,7 @@ def sanitize_summary_source_ids(sections: list, source_catalog: list) -> list:
         if not isinstance(text, str):
             text = ""
 
-        raw_source_ids = section.get("source_ids", [])
-        if isinstance(raw_source_ids, str):
-            raw_source_ids = [raw_source_ids]
-        if not isinstance(raw_source_ids, list):
-            raw_source_ids = []
-
-        source_ids = []
-        for source_id in raw_source_ids:
-            if isinstance(source_id, str) and source_id in valid_ids and source_id not in source_ids:
-                source_ids.append(source_id)
+        source_ids = _sanitize_source_ids(section.get("source_ids", []), valid_ids)
 
         bullets = []
         raw_bullets = section.get("bullets", [])
@@ -613,24 +596,15 @@ def sanitize_summary_source_ids(sections: list, source_catalog: list) -> list:
             for bullet in raw_bullets:
                 if isinstance(bullet, str):
                     bullet_text = bullet
-                    bullet_raw_source_ids = []
+                    bullet_source_ids = []
                 elif isinstance(bullet, dict):
                     bullet_text = bullet.get("text")
-                    bullet_raw_source_ids = bullet.get("source_ids", [])
+                    bullet_source_ids = _sanitize_source_ids(bullet.get("source_ids", []), valid_ids)
                 else:
                     continue
 
                 if not isinstance(bullet_text, str):
                     continue
-                if isinstance(bullet_raw_source_ids, str):
-                    bullet_raw_source_ids = [bullet_raw_source_ids]
-                if not isinstance(bullet_raw_source_ids, list):
-                    bullet_raw_source_ids = []
-
-                bullet_source_ids = []
-                for source_id in bullet_raw_source_ids:
-                    if isinstance(source_id, str) and source_id in valid_ids and source_id not in bullet_source_ids:
-                        bullet_source_ids.append(source_id)
 
                 bullets.append(
                     {
@@ -682,18 +656,8 @@ def generate_flashcards(context: str, count: int = 8, source_ids: list | None = 
         messages=messages,
         temperature=0.1,
     )
-    raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'```json|```', '', raw).strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        match = re.search(r'\[.*\]', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        return []
+    return _parse_json_array_response(response.choices[0].message.content)
+
 
 if __name__ == "__main__":
     q = input("Ask a question: ")

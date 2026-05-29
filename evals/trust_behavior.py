@@ -274,6 +274,20 @@ SUMMARY_JSON_ARRAY_WITH_BULLETS = [
 ]
 
 
+JSON_PARSER_CASES = [
+    ("valid raw JSON array", '["a", "b", "c"]', ["a", "b", "c"]),
+    ("fenced JSON array", '```json\n["a", "b"]\n```', ["a", "b"]),
+    ("text before/after array", 'Result:\n[42, 43]\nDone.', [42, 43]),
+    ("malformed returns []", "not json at all", []),
+]
+
+SOURCE_IDS_CATALOG = [
+    {"id": "s1", "source": "doc1.pdf"},
+    {"id": "s2", "source": "doc2.pdf"},
+    {"id": "s3", "source": "doc3.pdf"},
+]
+
+
 FALLBACK_SOURCE_TEXT = (
     "[Source ID: s1]\nKroma is a local document-RAG assistant. "
     "It processes PDFs, text files, and markdown.\n\n"
@@ -683,6 +697,58 @@ def run_request_bound_evals(failures: list) -> None:
         kroma_api.retrieve_chunks = original_retrieve
 
 
+def run_json_parser_evals(failures: list) -> None:
+    for name, raw, expected in JSON_PARSER_CASES:
+        result = kroma_rag._parse_json_array_response(raw)
+        if result != expected:
+            failures.append((f"json parser: {name}", expected, result))
+            print(f"FAIL: json parser: {name}")
+        else:
+            print(f"PASS: json parser: {name}")
+
+    cards_str = [{"question": "Q?", "answer": "A.", "source_ids": "s1"}]
+    result = sanitize_flashcards_source_ids(cards_str, SOURCE_IDS_CATALOG)
+    expected = [{"question": "Q?", "answer": "A.", "source_ids": ["s1"]}]
+    if result != expected:
+        failures.append(("flashcard source_ids string becomes ['s1']", expected, result))
+        print("FAIL: flashcard source_ids string becomes ['s1']")
+    else:
+        print("PASS: flashcard source_ids string becomes ['s1']")
+
+    questions_bad = [{
+        "question": "Q?", "choices": ["A. a", "B. b", "C. c", "D. d"],
+        "answer": "A", "explanation": "Because.", "source_ids": 123,
+    }]
+    result = sanitize_quiz_source_ids(questions_bad, SOURCE_IDS_CATALOG)
+    if result[0]["source_ids"] != []:
+        failures.append(("quiz source_ids non-list/non-string becomes []", [], result[0]["source_ids"]))
+        print("FAIL: quiz source_ids non-list/non-string becomes []")
+    else:
+        print("PASS: quiz source_ids non-list/non-string becomes []")
+
+    cards_dup = [{"question": "Q?", "answer": "A.", "source_ids": ["s2", "s1", "s2", "s3", "s1"]}]
+    result = sanitize_flashcards_source_ids(cards_dup, SOURCE_IDS_CATALOG)
+    if result[0]["source_ids"] != ["s2", "s1", "s3"]:
+        failures.append(("duplicate source_ids preserve first occurrence", ["s2", "s1", "s3"], result[0]["source_ids"]))
+        print("FAIL: duplicate source_ids preserve first occurrence")
+    else:
+        print("PASS: duplicate source_ids preserve first occurrence")
+
+    sections_str = [{
+        "heading": "Key Topics",
+        "text": "",
+        "source_ids": [],
+        "bullets": [{"text": "Test bullet", "source_ids": "nonexistent"}],
+    }]
+    result = sanitize_summary_source_ids(sections_str, SOURCE_IDS_CATALOG)
+    expected_bullets = [{"text": "Test bullet", "source_ids": []}]
+    if result[0]["bullets"] != expected_bullets:
+        failures.append(("summary string bullet becomes []", expected_bullets, result[0]["bullets"]))
+        print("FAIL: summary string bullet becomes []")
+    else:
+        print("PASS: summary string bullet becomes []")
+
+
 def main() -> int:
     failures = []
     for case in CASES:
@@ -833,6 +899,7 @@ def main() -> int:
     else:
         print("PASS: flashcard context exposes only source IDs")
 
+    run_json_parser_evals(failures)
     run_delete_filename_evals(failures)
     run_upload_validation_evals(failures)
     run_no_context_chat_eval(failures)
