@@ -1,3 +1,4 @@
+import gc
 import json
 import hmac
 import os
@@ -27,13 +28,18 @@ from ingest import (
 from rag import (
     build_source_catalog,
     build_source_linked_context,
+    business_context_is_relevant,
+    business_needs_human_review,
     generate_answer,
+    generate_business_copilot_output,
     generate_flashcards,
     generate_quiz,
     generate_suggestions,
     generate_summary,
+    normalize_business_copilot_output,
     normalize_summary_sections,
     retrieve_chunks,
+    sanitize_business_copilot_source_ids,
     sanitize_flashcards_source_ids,
     sanitize_quiz_source_ids,
     sanitize_summary_source_ids,
@@ -51,6 +57,8 @@ MAX_SELECTED_DOCS = 25
 MIN_STUDY_COUNT = 3
 MAX_STUDY_COUNT = 30
 VALID_QUIZ_DIFFICULTIES = {"easy", "medium", "hard"}
+VALID_BUSINESS_TASK_TYPES = {"answer_from_sources", "draft_reply", "summarize_for_team", "extract_action_items", "risk_check"}
+VALID_BUSINESS_AUDIENCES = {"internal_team", "customer", "partner", "investor", "distributor", "other"}
 DEMO_KEY_HEADER = "x-kroma-demo-key"
 MISSING_CONTEXT_ANSWER = "That information was not found in the uploaded documents."
 PUBLIC_DEMO_MAX_QUESTION_CHARS = 180
@@ -410,7 +418,7 @@ def process(request: Request):
         stats = ingest_documents()
         return {"success": True, "stats": stats}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail="Document processing failed.")
 
 
 class FlashcardRequest(BaseModel):
@@ -466,6 +474,12 @@ class SuggestRequest(BaseModel):
     selected_docs: list = []
 
 class SummaryRequest(BaseModel):
+    selected_docs: list = []
+
+class BusinessCopilotRequest(BaseModel):
+    task_type: str
+    audience: str
+    request: str
     selected_docs: list = []
 
 @app.post("/api/summary")
@@ -524,7 +538,6 @@ def delete_doc(filename: str, request: Request = None):
 @app.delete("/api/library")
 def clear_library(request: Request):
     _require_demo_key(request)
-    import gc
     gc.collect()
     for path in (CHROMA_PATH, STATS_FILE):
         try:
@@ -532,14 +545,74 @@ def clear_library(request: Request):
                 shutil.rmtree(path)
             elif path.is_file():
                 path.unlink(missing_ok=True)
-        except Exception as e:
-            print(f"Could not delete {path}: {e}")
+        except Exception:
+            continue
     for pdf in [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]:
         try:
             pdf.unlink(missing_ok=True)
         except Exception:
             pass
     return {"cleared": True}
+
+BUSINESS_NO_CONTEXT_RESPONSE = {
+    "result": {
+        "verified_facts": [],
+        "suggested_draft": "",
+        "missing_information": ["No relevant information was found in the selected documents."],
+        "needs_human_review": {"required": True, "reasons": ["No source-grounded context available"]},
+        "sources_used": [],
+    },
+    "sources": [],
+}
+
+
+@app.post("/api/business-copilot")
+def business_copilot(req: BusinessCopilotRequest, request: Request):
+    _require_demo_key(request)
+
+    task_type = req.task_type.strip().lower()
+    if task_type not in VALID_BUSINESS_TASK_TYPES:
+        raise HTTPException(400, f"task_type must be one of: {', '.join(sorted(VALID_BUSINESS_TASK_TYPES))}")
+
+    audience = req.audience.strip().lower()
+    if audience not in VALID_BUSINESS_AUDIENCES:
+        raise HTTPException(400, f"audience must be one of: {', '.join(sorted(VALID_BUSINESS_AUDIENCES))}")
+
+    request_text = req.request.strip()
+    if not request_text:
+        raise HTTPException(400, "request is required.")
+    if len(request_text) > 2000:
+        raise HTTPException(400, "request is limited to 2000 characters.")
+
+    selected_docs = _validate_selected_docs(req.selected_docs)
+    context, sources = retrieve_chunks(request_text, n_results=15, selected_docs=selected_docs)
+    source_catalog = build_source_catalog(sources) if sources else []
+    source_context = build_source_linked_context(context, source_catalog) if context and source_catalog else ""
+
+    if not business_context_is_relevant(sources):
+        return BUSINESS_NO_CONTEXT_RESPONSE
+
+    raw = generate_business_copilot_output(task_type, audience, request_text, source_context, source_catalog)
+    normalized = normalize_business_copilot_output(raw)
+    sanitized = sanitize_business_copilot_source_ids(normalized, source_catalog)
+
+    is_empty_output = (
+        not sanitized.get("verified_facts")
+        and not sanitized.get("suggested_draft", "").strip()
+        and not sanitized.get("missing_information")
+    )
+    if is_empty_output:
+        sanitized["missing_information"] = ["The model response could not be verified. Please review the request manually."]
+        hr = {"required": True, "reasons": ["Model output could not be verified"]}
+    else:
+        hr = business_needs_human_review(
+            task_type, audience, request_text,
+            sanitized.get("missing_information", []),
+        )
+    sanitized["needs_human_review"] = hr
+
+    return {"result": sanitized, "sources": source_catalog}
+
 
 # ── Serve frontend ───────────────────────────────────────────────────────────
 

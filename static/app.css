@@ -1150,6 +1150,237 @@
     color: var(--text-3);
   }
 
+  /* BUSINESS COPILOT */
+  .bc-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .bc-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem 2rem 3rem;
+    max-width: 700px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .bc-heading {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.35rem;
+  }
+
+  .bc-helper {
+    font-size: 0.9rem;
+    color: var(--text-3);
+    margin-bottom: 1.25rem;
+    line-height: 1.5;
+  }
+
+  .bc-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .bc-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-3);
+  }
+
+  .bc-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .bc-select:focus {
+    border-color: var(--gold-dim);
+  }
+
+  .bc-textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  .bc-textarea:focus {
+    border-color: var(--gold-dim);
+  }
+
+  .bc-textarea::placeholder {
+    color: var(--text-3);
+  }
+
+  .bc-error {
+    background: #450a0a;
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    padding: 0.65rem 0.85rem;
+    color: #fca5a5;
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
+  .bc-error[style*="display: none"] {
+    display: none !important;
+  }
+
+  .bc-loading {
+    font-size: 0.9rem;
+    color: var(--text-3);
+    padding: 1rem 0;
+  }
+
+  .bc-result {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  .bc-section {
+    margin-bottom: 1.25rem;
+  }
+
+  .bc-section-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gold-dim);
+    margin-bottom: 0.5rem;
+  }
+
+  .bc-fact {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.65rem 0.85rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--text-2);
+    line-height: 1.5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .bc-chip-group {
+    display: inline-flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .bc-source-chip {
+    background: var(--surface-2);
+    border: 1px solid var(--surface-3);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.62rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+
+  .bc-draft {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    color: var(--text-2);
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+
+  .bc-empty {
+    font-size: 0.82rem;
+    color: var(--text-3);
+    font-style: italic;
+  }
+
+  .bc-missing-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold-dim);
+    border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-2);
+    line-height: 1.45;
+  }
+
+  .bc-hr-required {
+    display: inline-block;
+    background: #450a0a;
+    border: 1px solid #dc2626;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #fca5a5;
+    margin-bottom: 0.5rem;
+  }
+
+  .bc-hr-not-required {
+    display: inline-block;
+    background: #052e16;
+    border: 1px solid #16a34a;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #86efac;
+  }
+
+  .bc-hr-reasons {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .bc-hr-reason {
+    font-size: 0.82rem;
+    color: var(--text-3);
+    line-height: 1.45;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border);
+  }
+
+  .bc-sources {
+    margin-top: 0.5rem;
+  }
+
+  .bc-sources[hidden] {
+    display: none;
+  }
+
   /* CONFIRM DIALOG */
   .confirm-overlay {
     position: fixed;

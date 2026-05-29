@@ -624,6 +624,166 @@ def sanitize_summary_source_ids(sections: list, source_catalog: list) -> list:
     return sanitized
 
 
+BUSINESS_SENSITIVE_RE = re.compile(
+    r"\b("
+    r"pricing?|price|cost|budget|"
+    r"legal|liability|compliance|regulatory|regulation|"
+    r"finance|financial|investor|investment|valuation|revenue|profit|"
+    r"scientific|clinical|"
+    r"medical|treatment|diagnosis|patient|"
+    r"product\s*claims?|warranty|guarantee|"
+    r"commercial\s*terms?|terms?\s*of\s*service|"
+    r"hr|hiring|personnel|employee|salary|compensation|"
+    r"complaints?|dispute|grievance|"
+    r"refunds?|cancel|cancellation|return\s*policy|"
+    r"negotiations?|negotiate|contract|"
+    r"confidential|nda|proprietary|"
+    r"lawsuit|litigation|settlement"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def business_context_is_relevant(sources, min_top_score=35):
+    if not sources or not isinstance(sources, list):
+        return False
+    scores = [s.get("score", 0) for s in sources if isinstance(s, dict)]
+    if not scores:
+        return False
+    return max(scores) >= min_top_score
+
+
+def business_needs_human_review(task_type, audience, request_text, missing_info):
+    reasons = []
+    external_audiences = {"customer", "partner", "investor", "distributor", "other"}
+    if audience in external_audiences:
+        reasons.append("External audience requires human review")
+    if task_type not in ("answer_from_sources", "summarize_for_team"):
+        reasons.append(f"Task type '{task_type}' requires human review")
+    if missing_info:
+        reasons.append("Missing information identified")
+    if BUSINESS_SENSITIVE_RE.search(request_text or ""):
+        reasons.append("Request contains potentially sensitive terms")
+    if not reasons:
+        return {"required": False, "reasons": []}
+    return {"required": True, "reasons": reasons}
+
+
+def _parse_business_copilot_response(raw: str) -> dict:
+    stripped = _strip_json_fence(raw)
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", stripped, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except Exception:
+            pass
+    return {}
+
+
+def generate_business_copilot_output(task_type, audience, request_text, source_context, source_catalog):
+    allowed_ids = [s["id"] for s in source_catalog] if source_catalog else []
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a Business Copilot assistant. Given document context, produce structured business output. "
+                "Respond ONLY with a valid JSON object, no markdown, no explanation, no backticks. "
+                f"Allowed source IDs: {', '.join(allowed_ids)}. "
+                "Use ONLY these source IDs in your response. Never invent source IDs. "
+                "Format: {\"verified_facts\": [{\"text\": \"...\", \"source_ids\": [\"s1\"]}], "
+                "\"suggested_draft\": \"...\", "
+                "\"missing_information\": [\"...\"], "
+                "\"sources_used\": [\"s1\"]} "
+                "verified_facts must cite at least one valid source ID per fact. "
+                "If a point is not directly supported by a source, put it in missing_information, not verified_facts. "
+                "suggested_draft should be a professional draft based on the verified facts. "
+                "sources_used should list all source IDs that were actually used."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"[Task type] {task_type}\n"
+                f"[Audience] {audience}\n"
+                f"[Request] {request_text}\n\n"
+                f"[Document context]\n{source_context}\n\n"
+                "Generate business copilot output for this task."
+            ),
+        },
+    ]
+    response = _groq_client().chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=0.3,
+    )
+    return _parse_business_copilot_response(response.choices[0].message.content)
+
+
+def normalize_business_copilot_output(payload):
+    if not isinstance(payload, dict):
+        payload = {}
+    result = {
+        "verified_facts": [],
+        "suggested_draft": "",
+        "missing_information": [],
+        "sources_used": [],
+    }
+    vf = payload.get("verified_facts", [])
+    if isinstance(vf, list):
+        cleaned = []
+        for f in vf:
+            if not isinstance(f, dict):
+                continue
+            text = f.get("text", "")
+            if not isinstance(text, str) or not text.strip():
+                continue
+            raw_ids = f.get("source_ids", [])
+            if isinstance(raw_ids, str):
+                raw_ids = [raw_ids]
+            if not isinstance(raw_ids, list):
+                raw_ids = []
+            cleaned.append({"text": text, "source_ids": [str(s) for s in raw_ids if isinstance(s, str)]})
+        result["verified_facts"] = cleaned
+    draft = payload.get("suggested_draft")
+    if isinstance(draft, str):
+        result["suggested_draft"] = draft
+    mi = payload.get("missing_information")
+    if isinstance(mi, list):
+        result["missing_information"] = [str(m) for m in mi if isinstance(m, str) and m.strip()]
+    su = payload.get("sources_used")
+    if isinstance(su, list):
+        result["sources_used"] = [str(s) for s in su if isinstance(s, str)]
+    return result
+
+
+def sanitize_business_copilot_source_ids(result, source_catalog):
+    valid_ids = _valid_source_ids(source_catalog) if source_catalog else set()
+    sanitized = {
+        "verified_facts": [],
+        "suggested_draft": result.get("suggested_draft", ""),
+        "missing_information": list(result.get("missing_information", [])),
+        "sources_used": _sanitize_source_ids(result.get("sources_used", []), valid_ids),
+    }
+    for fact in result.get("verified_facts", []):
+        if not isinstance(fact, dict):
+            continue
+        text = fact.get("text", "")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        clean_ids = _sanitize_source_ids(fact.get("source_ids", []), valid_ids)
+        if clean_ids:
+            sanitized["verified_facts"].append({"text": text, "source_ids": clean_ids})
+        else:
+            sanitized["missing_information"].append(text)
+    return sanitized
+
+
 def generate_flashcards(context: str, count: int = 8, source_ids: list | None = None) -> list:
     allowed_source_ids = source_ids or []
     source_instruction = ""

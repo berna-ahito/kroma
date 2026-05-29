@@ -621,8 +621,14 @@
     showToast('PDF export opened', 'success');
   }
 
+  function showChatComposer() {
+    const inputBar = document.querySelector('.input-bar');
+    if (inputBar) inputBar.style.display = 'flex';
+  }
+
   function backToChat() {
     currentView = 'chat';
+    showChatComposer();
     hideSuggestions();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.style.cssText = '';
@@ -643,6 +649,7 @@
     saveCurrentChat();
     resetCurrentChat();
     currentView = 'chat';
+    showChatComposer();
     document.getElementById('sendBtn').disabled = false;
     if (isPublicDemoMode()) {
       renderPublicDemoWelcome();
@@ -1038,6 +1045,7 @@
     loadedChatId = entry.id || null;
     chatHistory = [...(entry.messages || [])];
     currentView = 'chat';
+    showChatComposer();
     const wrapper = document.getElementById('chatWrapper');
     wrapper.innerHTML = '';
     hideSuggestions();
@@ -1066,6 +1074,7 @@
     if (loadedChatId === id) {
       resetCurrentChat();
       currentView = 'chat';
+      showChatComposer();
       if (isPublicDemoMode()) {
         renderPublicDemoWelcome();
         renderSuggestions(publicDemoQuestions);
@@ -1541,6 +1550,331 @@
     document.body.appendChild(overlay);
     cancelBtn.onclick = () => overlay.remove();
     okBtn.onclick = () => { overlay.remove(); onConfirm(); };
+  }
+
+  // ── KNOWLEDGE COPILOT ──────────────────────────────────────────────────
+
+  function showBusinessCopilot() {
+    const wrapper = document.getElementById('chatWrapper');
+
+    if (isPublicDemoMode()) {
+      currentView = 'business-copilot';
+      hideSuggestions();
+      wrapper.style.cssText = '';
+      wrapper.replaceChildren();
+      const container = document.createElement('div');
+      container.className = 'bc-container';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+      const backBtn = document.createElement('button');
+      backBtn.className = 'btn-secondary';
+      backBtn.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;';
+      backBtn.textContent = '\u2190 Back to chat';
+      backBtn.addEventListener('click', backToChat);
+      header.appendChild(backBtn);
+      container.appendChild(header);
+      const msg = document.createElement('div');
+      msg.style.cssText = 'padding:2rem;text-align:center;color:var(--text-3);font-size:0.95rem;line-height:1.6;';
+      msg.textContent = 'Enter your demo key in the sidebar to unlock Knowledge Copilot with your own documents.';
+      container.appendChild(msg);
+      wrapper.appendChild(container);
+      const inputBar = document.querySelector('.input-bar');
+      if (inputBar) inputBar.style.display = 'none';
+      return;
+    }
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
+    currentView = 'business-copilot';
+    hideSuggestions();
+
+    wrapper.style.cssText = '';
+    wrapper.replaceChildren();
+
+    const container = document.createElement('div');
+    container.className = 'bc-container';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn-secondary';
+    backBtn.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;';
+    backBtn.textContent = '\u2190 Back to chat';
+    backBtn.addEventListener('click', backToChat);
+    header.appendChild(backBtn);
+    const headerTitle = document.createElement('span');
+    headerTitle.style.cssText = 'font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;';
+    headerTitle.textContent = 'Knowledge Copilot';
+    header.appendChild(headerTitle);
+    container.appendChild(header);
+
+    const content = document.createElement('div');
+    content.className = 'bc-content';
+
+    const heading = document.createElement('div');
+    heading.className = 'bc-heading';
+    heading.textContent = 'Knowledge Copilot';
+    content.appendChild(heading);
+
+    const helper = document.createElement('div');
+    helper.className = 'bc-helper';
+    helper.textContent = 'Create source-grounded answers, drafts, summaries, action items, and risk checks from selected documents.';
+    content.appendChild(helper);
+
+    const form = document.createElement('div');
+    form.className = 'bc-form';
+
+    const taskLabel = document.createElement('div');
+    taskLabel.className = 'bc-label';
+    taskLabel.textContent = 'Task type';
+    form.appendChild(taskLabel);
+
+    const taskSelect = document.createElement('select');
+    taskSelect.className = 'bc-select';
+    taskSelect.id = 'bcTaskType';
+    [['answer_from_sources','Answer from sources'],['draft_reply','Draft reply'],['summarize_for_team','Summarize for team'],['extract_action_items','Extract action items'],['risk_check','Risk check']].forEach(([v,l]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = l; taskSelect.appendChild(o);
+    });
+    form.appendChild(taskSelect);
+
+    const audLabel = document.createElement('div');
+    audLabel.className = 'bc-label';
+    audLabel.textContent = 'Audience';
+    form.appendChild(audLabel);
+
+    const audSelect = document.createElement('select');
+    audSelect.className = 'bc-select';
+    audSelect.id = 'bcAudience';
+    [['internal_team','Internal team'],['customer','Customer'],['partner','Partner'],['investor','Investor'],['distributor','Distributor'],['other','Other']].forEach(([v,l]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = l; audSelect.appendChild(o);
+    });
+    form.appendChild(audSelect);
+
+    const reqLabel = document.createElement('div');
+    reqLabel.className = 'bc-label';
+    reqLabel.textContent = 'Request / context';
+    form.appendChild(reqLabel);
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'bc-textarea';
+    textarea.id = 'bcRequest';
+    textarea.placeholder = 'What would you like to generate?';
+    textarea.rows = 4;
+    form.appendChild(textarea);
+
+    const errorEl = document.createElement('div');
+    errorEl.className = 'bc-error';
+    errorEl.id = 'bcError';
+    errorEl.style.display = 'none';
+    form.appendChild(errorEl);
+
+    const genBtn = document.createElement('button');
+    genBtn.className = 'btn-primary';
+    genBtn.id = 'bcGenerateBtn';
+    genBtn.textContent = 'Generate';
+    genBtn.addEventListener('click', runBusinessCopilot);
+    form.appendChild(genBtn);
+
+    content.appendChild(form);
+
+    const resultEl = document.createElement('div');
+    resultEl.className = 'bc-result';
+    resultEl.id = 'bcResult';
+    content.appendChild(resultEl);
+
+    container.appendChild(content);
+
+    wrapper.appendChild(container);
+    const inputBar = document.querySelector('.input-bar');
+    if (inputBar) inputBar.style.display = 'none';
+  }
+
+  async function runBusinessCopilot() {
+    const taskType = document.getElementById('bcTaskType').value;
+    const audience = document.getElementById('bcAudience').value;
+    const request = document.getElementById('bcRequest').value.trim();
+    const errorEl = document.getElementById('bcError');
+    const genBtn = document.getElementById('bcGenerateBtn');
+    const resultEl = document.getElementById('bcResult');
+
+    errorEl.style.display = 'none';
+    if (!request) {
+      errorEl.textContent = 'Please enter a request or context.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+
+    genBtn.disabled = true;
+    genBtn.textContent = 'Generating...';
+    resultEl.textContent = '';
+    const loading = document.createElement('div');
+    loading.className = 'bc-loading';
+    loading.textContent = 'Generating...';
+    resultEl.appendChild(loading);
+
+    try {
+      const res = await apiFetch('/api/business-copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_type: taskType, audience, request, selected_docs: selected })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        resultEl.textContent = '';
+        errorEl.textContent = data.detail || 'Request failed.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      renderBusinessCopilotResult(data, resultEl);
+    } catch(e) {
+      resultEl.textContent = '';
+      errorEl.textContent = 'Something went wrong. Please try again.';
+      errorEl.style.display = 'block';
+    } finally {
+      genBtn.disabled = false;
+      genBtn.textContent = 'Generate';
+    }
+  }
+
+  function renderBusinessCopilotResult(data, container) {
+    container.replaceChildren();
+    const result = data.result || {};
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+    const sourcesUsed = Array.isArray(result.sources_used) ? result.sources_used : [];
+    const usedSources = sources.filter(s => s && sourcesUsed.includes(s.id));
+
+    const facts = Array.isArray(result.verified_facts) ? result.verified_facts : [];
+    const factsSec = document.createElement('div');
+    factsSec.className = 'bc-section';
+    const factsLabel = document.createElement('div');
+    factsLabel.className = 'bc-section-label';
+    factsLabel.textContent = 'Verified facts from sources';
+    factsSec.appendChild(factsLabel);
+    if (facts.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bc-empty';
+      empty.textContent = 'No verified facts were extracted.';
+      factsSec.appendChild(empty);
+    } else {
+      facts.forEach(f => {
+        const el = document.createElement('div');
+        el.className = 'bc-fact';
+        const txt = document.createElement('span');
+        txt.textContent = f.text || '';
+        el.appendChild(txt);
+        if (Array.isArray(f.source_ids) && f.source_ids.length) {
+          const chips = document.createElement('span');
+          chips.className = 'bc-chip-group';
+          f.source_ids.forEach(sid => {
+            const c = document.createElement('span');
+            c.className = 'bc-source-chip';
+            c.textContent = sid;
+            chips.appendChild(c);
+          });
+          el.appendChild(chips);
+        }
+        factsSec.appendChild(el);
+      });
+    }
+    container.appendChild(factsSec);
+
+    const draftSec = document.createElement('div');
+    draftSec.className = 'bc-section';
+    const draftLabel = document.createElement('div');
+    draftLabel.className = 'bc-section-label';
+    draftLabel.textContent = 'Suggested draft / response';
+    draftSec.appendChild(draftLabel);
+    const draftEl = document.createElement('div');
+    draftEl.className = result.suggested_draft ? 'bc-draft' : 'bc-empty';
+    draftEl.textContent = result.suggested_draft || 'No draft was generated.';
+    draftSec.appendChild(draftEl);
+    container.appendChild(draftSec);
+
+    const missing = Array.isArray(result.missing_information) ? result.missing_information : [];
+    const missSec = document.createElement('div');
+    missSec.className = 'bc-section';
+    const missLabel = document.createElement('div');
+    missLabel.className = 'bc-section-label';
+    missLabel.textContent = 'Missing information';
+    missSec.appendChild(missLabel);
+    if (missing.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bc-empty';
+      empty.textContent = 'No missing information reported.';
+      missSec.appendChild(empty);
+    } else {
+      missing.forEach(m => {
+        const el = document.createElement('div');
+        el.className = 'bc-missing-item';
+        el.textContent = m;
+        missSec.appendChild(el);
+      });
+    }
+    container.appendChild(missSec);
+
+    const hr = result.needs_human_review || {};
+    const hrSec = document.createElement('div');
+    hrSec.className = 'bc-section';
+    const hrLabel = document.createElement('div');
+    hrLabel.className = 'bc-section-label';
+    hrLabel.textContent = 'Human review';
+    hrSec.appendChild(hrLabel);
+    const hrReq = document.createElement('div');
+    hrReq.className = hr.required ? 'bc-hr-required' : 'bc-hr-not-required';
+    hrReq.textContent = hr.required ? 'Required' : 'Not required';
+    hrSec.appendChild(hrReq);
+    if (hr.required && Array.isArray(hr.reasons) && hr.reasons.length) {
+      const reasonsEl = document.createElement('div');
+      reasonsEl.className = 'bc-hr-reasons';
+      hr.reasons.forEach(r => {
+        const re = document.createElement('div');
+        re.className = 'bc-hr-reason';
+        re.textContent = r;
+        reasonsEl.appendChild(re);
+      });
+      hrSec.appendChild(reasonsEl);
+    }
+    container.appendChild(hrSec);
+
+    const srcSec = document.createElement('div');
+    srcSec.className = 'bc-section';
+    const srcLabel = document.createElement('div');
+    srcLabel.className = 'bc-section-label';
+    srcLabel.textContent = 'Sources used';
+    srcSec.appendChild(srcLabel);
+    if (usedSources.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bc-empty';
+      empty.textContent = 'No sources were referenced.';
+      srcSec.appendChild(empty);
+    } else {
+      const toggleId = 'bcSrcToggle-' + Date.now();
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'source-toggle';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-controls', toggleId);
+      toggle.setAttribute('aria-label', 'Show source details');
+      toggle.textContent = 'Show details';
+      srcSec.appendChild(toggle);
+      const list = document.createElement('div');
+      list.className = 'sources bc-sources';
+      list.id = toggleId;
+      list.hidden = true;
+      usedSources.forEach(s => list.appendChild(createSourceCard(s)));
+      toggle.addEventListener('click', () => {
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        list.hidden = expanded;
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        toggle.setAttribute('aria-label', expanded ? 'Show source details' : 'Hide source details');
+        toggle.textContent = expanded ? 'Show details' : 'Hide details';
+      });
+      srcSec.appendChild(list);
+    }
+    container.appendChild(srcSec);
   }
 
   renderHistory();
