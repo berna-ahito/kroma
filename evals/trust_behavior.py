@@ -1011,6 +1011,141 @@ def run_business_copilot_evals(failures: list) -> None:
         os.environ.pop("KROMA_DEMO_KEY", None)
 
 
+def run_knowledge_audit_evals(failures: list) -> None:
+    from rag import (
+        sanitize_knowledge_audit_source_ids,
+        normalize_knowledge_audit_output,
+        compute_readiness_verdict
+    )
+    ka_sources = [{"id": "s1", "source": "doc1.pdf", "score": 91}]
+    ka_payload = {
+        "coverage_summary": [{"area": "A", "source_ids": ["s1", "bad"]}, {"area": "B", "source_ids": ["bad"]}],
+        "risk_areas": [{"area": "R", "detail": "D", "source_ids": ["s1", "bad"]}],
+        "sources_used": ["s1", "bad"]
+    }
+    sanitized = sanitize_knowledge_audit_source_ids(ka_payload, ka_sources)
+    if sanitized["coverage_summary"] != [{"area": "A", "source_ids": ["s1"]}]:
+        failures.append(("knowledge audit invalid source IDs removed from coverage & without valid sources removed", "A with s1", sanitized["coverage_summary"]))
+        print("FAIL: knowledge audit invalid source IDs removed from coverage")
+    else:
+        print("PASS: knowledge audit invalid source IDs removed from coverage")
+
+    if sanitized["risk_areas"] != [{"area": "R", "detail": "D", "source_ids": ["s1"]}]:
+        failures.append(("knowledge audit invalid source IDs removed from risk_areas", "R with s1", sanitized["risk_areas"]))
+        print("FAIL: knowledge audit invalid source IDs removed from risk_areas")
+    else:
+        print("PASS: knowledge audit invalid source IDs removed from risk_areas")
+
+    if sanitized["sources_used"] != ["s1"]:
+        failures.append(("knowledge audit invalid sources_used stripped", ["s1"], sanitized["sources_used"]))
+        print("FAIL: knowledge audit invalid sources_used stripped")
+    else:
+        print("PASS: knowledge audit invalid sources_used stripped")
+
+    v_low_coverage = compute_readiness_verdict({"coverage_summary": [{"area": "A"}], "risk_areas": [], "missing_knowledge": []})
+    if v_low_coverage["level"] != "Low":
+        failures.append(("knowledge audit readiness verdict Low when no coverage", "Low", v_low_coverage))
+        print("FAIL: knowledge audit readiness verdict Low when no coverage")
+    else:
+        print("PASS: knowledge audit readiness verdict Low when no coverage")
+
+    v_low_risks = compute_readiness_verdict({"coverage_summary": [{"area": "A"}, {"area": "B"}], "risk_areas": [1,2,3], "missing_knowledge": []})
+    if v_low_risks["level"] != "Low":
+        failures.append(("knowledge audit readiness verdict Low when many risks", "Low", v_low_risks))
+        print("FAIL: knowledge audit readiness verdict Low when many risks")
+    else:
+        print("PASS: knowledge audit readiness verdict Low when many risks")
+
+    v_low_missing = compute_readiness_verdict({"coverage_summary": [{"area": "A"}, {"area": "B"}], "risk_areas": [], "missing_knowledge": [1,2,3]})
+    if v_low_missing["level"] != "Low":
+        failures.append(("knowledge audit readiness verdict Low when many missing items", "Low", v_low_missing))
+        print("FAIL: knowledge audit readiness verdict Low when many missing items")
+    else:
+        print("PASS: knowledge audit readiness verdict Low when many missing items")
+
+    v_high = compute_readiness_verdict({"coverage_summary": [1,2,3,4], "risk_areas": [], "missing_knowledge": [1]})
+    if v_high["level"] != "High":
+        failures.append(("knowledge audit readiness verdict High when good coverage", "High", v_high))
+        print("FAIL: knowledge audit readiness verdict High when good coverage")
+    else:
+        print("PASS: knowledge audit readiness verdict High when good coverage")
+
+    v_med = compute_readiness_verdict({"coverage_summary": [1,2,3], "risk_areas": [1], "missing_knowledge": [1]})
+    if v_med["level"] != "Medium":
+        failures.append(("knowledge audit readiness verdict Medium otherwise", "Medium", v_med))
+        print("FAIL: knowledge audit readiness verdict Medium otherwise")
+    else:
+        print("PASS: knowledge audit readiness verdict Medium otherwise")
+
+    norm_empty = normalize_knowledge_audit_output({})
+    if "coverage_summary" not in norm_empty:
+        failures.append(("knowledge audit normalize handles empty payload", "valid structure", norm_empty))
+        print("FAIL: knowledge audit normalize handles empty payload")
+    else:
+        print("PASS: knowledge audit normalize handles empty payload")
+
+    norm_malf = normalize_knowledge_audit_output("bad string")
+    if "coverage_summary" not in norm_malf:
+        failures.append(("knowledge audit normalize handles malformed/string payload", "valid structure", norm_malf))
+        print("FAIL: knowledge audit normalize handles malformed/string payload")
+    else:
+        print("PASS: knowledge audit normalize handles malformed/string payload")
+
+    original_retrieve = kroma_api.retrieve_chunks
+    original_generate = getattr(kroma_api, "generate_knowledge_audit", None)
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+
+    try:
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Invalid input should fail before retrieval."))
+        resp = client.post("/api/knowledge-audit", json={"selected_docs": [f"doc{i}.pdf" for i in range(30)]})
+        if resp.status_code != 400:
+            failures.append(("knowledge audit selected_docs validation rejects too many docs", 400, resp.status_code))
+            print("FAIL: knowledge audit selected_docs validation rejects too many docs")
+        else:
+            print("PASS: knowledge audit selected_docs validation rejects too many docs")
+
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: ("", [])
+        kroma_api.generate_knowledge_audit = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Should not call Groq"))
+        resp = client.post("/api/knowledge-audit", json={"selected_docs": []})
+        expected_no_ctx = kroma_api.KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE
+        if resp.status_code != 200 or resp.json() != expected_no_ctx:
+            failures.append(("knowledge audit no-context returns deterministic JSON", expected_no_ctx, resp.json()))
+            print("FAIL: knowledge audit no-context returns deterministic JSON")
+        else:
+            print("PASS: knowledge audit no-context returns deterministic JSON")
+
+        os.environ["KROMA_DEMO_KEY"] = "ka-key"
+        resp_missing = client.post("/api/knowledge-audit", json={})
+        if resp_missing.status_code != 401:
+            failures.append(("knowledge audit requires demo key when configured", 401, resp_missing.status_code))
+            print("FAIL: knowledge audit requires demo key when configured")
+        else:
+            print("PASS: knowledge audit requires demo key when configured")
+
+        resp_correct = client.post("/api/knowledge-audit", headers={"X-Kroma-Demo-Key": "ka-key"}, json={})
+        if resp_correct.status_code != 200:
+            failures.append(("knowledge audit correct demo key allowed", 200, resp_correct.status_code))
+            print("FAIL: knowledge audit correct demo key allowed")
+        else:
+            print("PASS: knowledge audit correct demo key allowed")
+
+        os.environ.pop("KROMA_DEMO_KEY", None)
+        resp_nokey = client.post("/api/knowledge-audit", json={})
+        if resp_nokey.status_code != 200:
+            failures.append(("knowledge audit no key required when unset", 200, resp_nokey.status_code))
+            print("FAIL: knowledge audit no key required when unset")
+        else:
+            print("PASS: knowledge audit no key required when unset")
+    except Exception as e:
+        failures.append(("knowledge audit execution exception", "success", str(e)))
+        print(f"FAIL: knowledge audit execution exception - {str(e)}")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
+        if original_generate:
+            kroma_api.generate_knowledge_audit = original_generate
+        os.environ.pop("KROMA_DEMO_KEY", None)
+
+
 def main() -> int:
     failures = []
     for case in CASES:
@@ -1170,6 +1305,7 @@ def main() -> int:
     run_demo_key_evals(failures)
     run_request_bound_evals(failures)
     run_business_copilot_evals(failures)
+    run_knowledge_audit_evals(failures)
 
     if failures:
         print("\nFailures:")
