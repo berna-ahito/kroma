@@ -360,7 +360,8 @@
     return `${firstLocation}${more} · ${chunks}`;
   }
 
-  function createSourceCard(source) {
+  function createSourceCard(source, options = {}) {
+    const { showId = false } = options;
     const item = document.createElement('div');
     item.className = 'source-tag';
 
@@ -369,7 +370,10 @@
     const filename = source?.source || 'Unknown source';
     const location = sourceLocationLabel(source);
     const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-    meta.textContent = `${filename} • ${location} • Relevance ${score}`;
+    const parts = [];
+    if (showId && source?.id) parts.push(source.id);
+    parts.push(`${filename} • ${location} • Relevance ${score}`);
+    meta.textContent = parts.join(' • ');
     item.appendChild(meta);
 
     if (source?.preview) {
@@ -380,6 +384,25 @@
     }
 
     return item;
+  }
+
+  function renderSourceList(container, sources, options = {}) {
+    const { showId = false, showUnsourced = true } = options;
+    container.replaceChildren();
+    const validSources = Array.isArray(sources) ? sources.filter(Boolean) : [];
+    if (!validSources.length && showUnsourced) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      container.appendChild(item);
+      return;
+    }
+    validSources.forEach(source => {
+      container.appendChild(createSourceCard(source, { showId }));
+    });
   }
 
   function appendChatSources(bubble, sources) {
@@ -895,45 +918,9 @@
   function renderQuizSources(question, index) {
     const sourceList = document.getElementById(`quizSources-${index}`);
     if (!sourceList) return;
-    sourceList.innerHTML = '';
-
     const sourceIds = Array.isArray(question?.source_ids) ? question.source_ids : [];
-    const validSources = sourceIds
-      .map(id => quizSourceCatalog.get(id))
-      .filter(Boolean);
-
-    if (!validSources.length) {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      meta.textContent = 'Unsourced';
-      item.appendChild(meta);
-      sourceList.appendChild(item);
-      return;
-    }
-
-    validSources.forEach(source => {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      const filename = source?.source || 'Unknown source';
-      const location = sourceLocationLabel(source);
-      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
-      item.appendChild(meta);
-
-      if (source?.preview) {
-        const preview = document.createElement('div');
-        preview.className = 'source-preview';
-        preview.textContent = source.preview;
-        item.appendChild(preview);
-      }
-
-      sourceList.appendChild(item);
-    });
+    const validSources = sourceIds.map(id => quizSourceCatalog.get(id)).filter(Boolean);
+    renderSourceList(sourceList, validSources, { showId: true, showUnsourced: true });
   }
 
   // ── HISTORY ──────────────────────────────────────────────────────────
@@ -1281,45 +1268,9 @@
 
   function renderFlashcardSources(card) {
     const sourceList = document.getElementById('fcSources');
-    sourceList.innerHTML = '';
-
     const sourceIds = Array.isArray(card?.source_ids) ? card.source_ids : [];
-    const validSources = sourceIds
-      .map(id => flashcardSourceCatalog.get(id))
-      .filter(Boolean);
-
-    if (!validSources.length) {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      meta.textContent = 'Unsourced';
-      item.appendChild(meta);
-      sourceList.appendChild(item);
-      return;
-    }
-
-    validSources.forEach(source => {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      const filename = source?.source || 'Unknown source';
-      const location = sourceLocationLabel(source);
-      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
-      item.appendChild(meta);
-
-      if (source?.preview) {
-        const preview = document.createElement('div');
-        preview.className = 'source-preview';
-        preview.textContent = source.preview;
-        item.appendChild(preview);
-      }
-
-      sourceList.appendChild(item);
-    });
+    const validSources = sourceIds.map(id => flashcardSourceCatalog.get(id)).filter(Boolean);
+    renderSourceList(sourceList, validSources, { showId: true, showUnsourced: true });
   }
 
   function nextCard() {
@@ -1371,44 +1322,10 @@
   }
 
   function renderSummarySources(sourceList, sourceIds, sourceCatalog) {
-    sourceList.replaceChildren();
-    const ids = Array.isArray(sourceIds) ? sourceIds : [];
-    const validSources = ids
+    const resolved = (Array.isArray(sourceIds) ? sourceIds : [])
       .map(id => sourceCatalog.get(id))
       .filter(Boolean);
-
-    if (!validSources.length) {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      meta.textContent = 'Unsourced';
-      item.appendChild(meta);
-      sourceList.appendChild(item);
-      return;
-    }
-
-    validSources.forEach(source => {
-      const item = document.createElement('div');
-      item.className = 'source-tag';
-
-      const meta = document.createElement('div');
-      meta.className = 'source-meta';
-      const filename = source?.source || 'Unknown source';
-      const location = sourceLocationLabel(source);
-      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
-      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
-      item.appendChild(meta);
-
-      if (source?.preview) {
-        const preview = document.createElement('div');
-        preview.className = 'source-preview';
-        preview.textContent = source.preview;
-        item.appendChild(preview);
-      }
-
-      sourceList.appendChild(item);
-    });
+    renderSourceList(sourceList, resolved, { showId: true, showUnsourced: true });
   }
 
   function stripJsonFence(text) {
