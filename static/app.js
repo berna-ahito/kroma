@@ -1,0 +1,1630 @@
+  let chatHistory = [];
+  let isIndexed = false;
+  let loadedChatId = null;
+  let currentView = 'chat';
+  const DEMO_KEY_STORAGE = 'kroma_demo_key';
+  const NO_PROCESSED_MESSAGE = 'No processed documents are available. Upload and process a document first.';
+  const PUBLIC_DEMO_NOTE = 'Public demo uses a sample document. Enter demo key to test your own files.';
+  let demoKeyRequired = false;
+  let publicDemoQuestions = [];
+  let publicDemoQuestionLimit = 180;
+  let publicDemoDocument = 'kroma-public-demo.md';
+
+  function storeDemoKey(value) {
+    if (value) sessionStorage.setItem(DEMO_KEY_STORAGE, value);
+    else sessionStorage.removeItem(DEMO_KEY_STORAGE);
+    renderDemoAccessState();
+  }
+
+  function apiFetch(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    const demoKey = sessionStorage.getItem(DEMO_KEY_STORAGE);
+    if (demoKey) headers.set('X-Kroma-Demo-Key', demoKey);
+    return fetch(url, { ...options, headers });
+  }
+
+  function hasDemoKey() {
+    return Boolean(sessionStorage.getItem(DEMO_KEY_STORAGE));
+  }
+
+  function isPublicDemoMode() {
+    return demoKeyRequired && !hasDemoKey();
+  }
+
+  function renderDemoAccessState() {
+    const note = document.getElementById('publicDemoNote');
+    const chatInput = document.getElementById('chatInput');
+    if (!note) return;
+    if (!demoKeyRequired) {
+      note.style.display = 'none';
+      note.textContent = '';
+      if (chatInput) chatInput.placeholder = 'Ask anything about your documents...';
+      return;
+    }
+    note.style.display = 'block';
+    note.textContent = hasDemoKey()
+      ? 'Demo key entered. Custom file tools are unlocked for this tab.'
+      : PUBLIC_DEMO_NOTE;
+    if (chatInput) {
+      chatInput.placeholder = hasDemoKey()
+        ? 'Ask anything about your documents...'
+        : 'Choose a suggested sample question...';
+    }
+  }
+
+  function resetDocumentSession() {
+    chatHistory = [];
+    loadedChatId = null;
+    currentView = 'chat';
+    document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('suggestionsBar').style.display = 'none';
+  }
+
+  function createIcon(name, className = 'ui-icon') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    const addPath = d => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    };
+    const addCircle = attrs => {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      Object.entries(attrs).forEach(([key, value]) => circle.setAttribute(key, value));
+      svg.appendChild(circle);
+    };
+
+    const paths = {
+      document: ['M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z', 'M14 2v5h5', 'M9 13h6', 'M9 17h4'],
+      list: ['M8 6h11', 'M8 12h11', 'M8 18h11', 'M4 6h.01', 'M4 12h.01', 'M4 18h.01'],
+      clipboard: ['M9 4h6', 'M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2', 'M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2', 'M9 13h6', 'M9 17h4'],
+      download: ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14'],
+      folder: ['M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z']
+    };
+
+    if (name === 'quiz') {
+      addCircle({ cx: '12', cy: '12', r: '9' });
+      addPath('M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5');
+      addPath('M12 17h.01');
+      return svg;
+    }
+
+    (paths[name] || paths.document).forEach(addPath);
+    return svg;
+  }
+
+  function setIconButton(button, iconName, label) {
+    button.textContent = '';
+    const text = document.createElement('span');
+    text.textContent = label;
+    button.appendChild(createIcon(iconName));
+    button.appendChild(text);
+  }
+
+  function renderSafeMarkdown(target, text) {
+    target.innerHTML = DOMPurify.sanitize(marked.parse(String(text ?? '')));
+  }
+
+  async function init() {
+    const demoKeyInput = document.getElementById('demoKeyInput');
+    if (demoKeyInput) demoKeyInput.value = sessionStorage.getItem(DEMO_KEY_STORAGE) || '';
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      demoKeyRequired = Boolean(data.demo_key_required);
+      publicDemoQuestions = Array.isArray(data.public_demo?.questions) ? data.public_demo.questions : [];
+      publicDemoQuestionLimit = Number(data.public_demo?.question_limit) || 180;
+      publicDemoDocument = data.public_demo?.document || 'kroma-public-demo.md';
+      renderDemoAccessState();
+      isIndexed = Boolean(data.indexed);
+      if (isPublicDemoMode()) {
+        isIndexed = true;
+        document.getElementById('metrics').style.display = 'none';
+        renderPublicDemoLibrary();
+        document.getElementById('topbarSub').textContent = 'Public sample document';
+        if (chatHistory.length === 0) {
+          renderPublicDemoWelcome();
+          renderSuggestions(publicDemoQuestions);
+        }
+        return;
+      }
+      if (data.stats) updateMetrics(data.stats);
+      else document.getElementById('metrics').style.display = 'none';
+      renderLibrary(data.docs || []);
+      if (isIndexed) {
+        const es = document.getElementById('emptyState');
+        if (es) es.style.display = 'none';
+        document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
+        if (chatHistory.length === 0) fetchSuggestions();
+      } else {
+        resetDocumentSession();
+        const wrapper = document.getElementById('chatWrapper');
+        wrapper.innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M7 12h10"/>
+              <path d="M7 16h6"/>
+            </svg>
+            <h3>Ask your documents anything</h3>
+            <p>${NO_PROCESSED_MESSAGE}</p>
+            <div class="steps">
+              <div class="step"><span class="step-num">1</span><span>Upload a supported file from your computer</span></div>
+              <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong> to prepare your files</span></div>
+              <div class="step"><span class="step-num">3</span><span>Ask questions and review the cited sources</span></div>
+            </div>
+          </div>`;
+      }
+    } catch(e) {}
+  }
+
+  function renderPublicDemoWelcome() {
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.replaceChildren();
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.id = 'emptyState';
+    empty.innerHTML = `
+      <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M7 12h10"/>
+        <path d="M7 16h6"/>
+      </svg>
+      <h3>Try Kroma with a sample document</h3>
+    `;
+    const body = document.createElement('p');
+    body.textContent = PUBLIC_DEMO_NOTE;
+    empty.appendChild(body);
+    wrapper.appendChild(empty);
+  }
+
+  function renderPublicDemoLibrary() {
+    const list = document.getElementById('libraryList');
+    list.replaceChildren();
+
+    const item = document.createElement('div');
+    item.className = 'doc-item demo-doc';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.disabled = true;
+    checkbox.style.cssText = 'accent-color:var(--gold);flex-shrink:0;';
+
+    const icon = createIcon('document', 'doc-icon ui-icon');
+
+    const info = document.createElement('div');
+    info.className = 'doc-info';
+
+    const docTitle = document.createElement('div');
+    docTitle.className = 'doc-name';
+    docTitle.title = publicDemoDocument;
+    docTitle.textContent = publicDemoDocument;
+    info.appendChild(docTitle);
+
+    item.appendChild(checkbox);
+    item.appendChild(icon);
+    item.appendChild(info);
+    list.appendChild(item);
+  }
+
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.getElementById('uploadArea');
+
+  fileInput.addEventListener('change', async () => {
+    for (const file of fileInput.files) await uploadFile(file);
+    fileInput.value = '';
+    await init();
+  });
+
+  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+  uploadArea.addEventListener('drop', async e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    for (const file of e.dataTransfer.files) {
+      if (isSupportedUpload(file.name)) await uploadFile(file);
+      else showToast(`Unsupported file: ${file.name}`, 'error');
+    }
+    await init();
+  });
+
+  function isSupportedUpload(name) {
+    return /\.(pdf|txt|md|markdown)$/i.test(String(name || ''));
+  }
+
+  async function uploadFile(file) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to upload custom files.', 'error');
+      return;
+    }
+    const form = new FormData();
+    form.append('file', file);
+    const res = await apiFetch('/api/upload', { method: 'POST', body: form });
+    if (res.ok) showToast(`Uploaded: ${file.name}`, 'success');
+    else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || `Failed: ${file.name}`, 'error');
+    }
+  }
+
+  async function processDocuments() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to process custom files.', 'error');
+      return;
+    }
+    const btn = document.getElementById('processBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+    try {
+      const res = await apiFetch('/api/process', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        isIndexed = true;
+        updateMetrics(data.stats);
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) emptyState.style.display = 'none';
+        document.getElementById('topbarSub').textContent = 'Ask anything about your documents';
+        showToast('Ready — ask your first question', 'success');
+        await init();
+      } else {
+        showToast(data.detail || 'Processing failed', 'error');
+      }
+    } catch(e) { showToast('Processing failed', 'error'); }
+    btn.disabled = false;
+    btn.textContent = 'Process Documents';
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const question = input.value.trim();
+    if (!question) return;
+    const publicDemo = isPublicDemoMode();
+    if (!isIndexed && !publicDemo) { showToast(NO_PROCESSED_MESSAGE, 'error'); return; }
+    if (publicDemo && question.length > publicDemoQuestionLimit) {
+      showToast(`Public demo questions are limited to ${publicDemoQuestionLimit} characters.`, 'error');
+      return;
+    }
+
+    const selected = publicDemo ? [] : [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (!publicDemo && selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    input.value = '';
+    autoResize(input);
+    document.getElementById('suggestionsBar').style.display = 'none';
+    appendMessage('user', question);
+    chatHistory.push({ role: 'user', content: question });
+
+    const thinking = appendThinking();
+    document.getElementById('sendBtn').disabled = true;
+
+    try {
+      const res = await apiFetch(publicDemo ? '/api/demo/chat' : '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(publicDemo ? { question } : { question, history: chatHistory.slice(-16), selected_docs: selected })
+      });
+      const data = await res.json();
+      thinking.remove();
+      if (!res.ok) {
+        appendMessage('ai', data.detail || 'Request failed.');
+        return;
+      }
+      const sources = data.show_sources ? (data.sources || []) : [];
+      appendMessage('ai', data.answer, sources);
+      chatHistory.push({ role: 'assistant', content: data.answer, sources, show_sources: data.show_sources });
+    document.getElementById('exportBtn').style.display = 'block';
+    } catch(e) {
+      thinking.remove();
+      appendMessage('ai', 'Something went wrong. Please try again.');
+    }
+    document.getElementById('sendBtn').disabled = false;
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  const CHAT_SOURCE_PREVIEW_LIMIT = 3;
+  let chatSourceDisclosureId = 0;
+
+  function sourceLocationLabel(source) {
+    if (source?.location_label) return source.location_label;
+    return source?.page !== undefined && source?.page !== null && source.page !== ''
+      ? `Page ${source.page}`
+      : 'Document';
+  }
+
+  function formatSourceLocation(source) {
+    return ` · ${sourceLocationLabel(source)}`;
+  }
+
+  function formatSourceSummary(sources) {
+    const first = sources[0] || {};
+    const filename = first?.source || 'Unknown source';
+    const firstLocation = `${filename}${formatSourceLocation(first)}`;
+    const uniqueLocations = new Set(
+      sources.map(source => `${source?.source || 'Unknown source'}${formatSourceLocation(source)}`)
+    );
+    const more = uniqueLocations.size > 1 ? ` + ${uniqueLocations.size - 1} more` : '';
+    const chunks = sources.length === 1 ? '1 chunk' : `${sources.length} chunks`;
+    return `${firstLocation}${more} · ${chunks}`;
+  }
+
+  function createSourceCard(source) {
+    const item = document.createElement('div');
+    item.className = 'source-tag';
+
+    const meta = document.createElement('div');
+    meta.className = 'source-meta';
+    const filename = source?.source || 'Unknown source';
+    const location = sourceLocationLabel(source);
+    const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+    meta.textContent = `${filename} • ${location} • Relevance ${score}`;
+    item.appendChild(meta);
+
+    if (source?.preview) {
+      const preview = document.createElement('div');
+      preview.className = 'source-preview';
+      preview.textContent = source.preview;
+      item.appendChild(preview);
+    }
+
+    return item;
+  }
+
+  function appendChatSources(bubble, sources) {
+    const detailId = `chatSources-${++chatSourceDisclosureId}`;
+
+    const summary = document.createElement('div');
+    summary.className = 'source-summary';
+
+    const summaryText = document.createElement('span');
+    summaryText.className = 'source-summary-text';
+    summaryText.textContent = `Sources used: ${formatSourceSummary(sources)}`;
+    summary.appendChild(summaryText);
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'source-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', detailId);
+    toggle.setAttribute('aria-label', `Show source details for ${sources.length} ${sources.length === 1 ? 'chunk' : 'chunks'}`);
+    toggle.textContent = 'Show details';
+    summary.appendChild(toggle);
+
+    const sourceList = document.createElement('div');
+    sourceList.className = 'sources chat-sources';
+    sourceList.id = detailId;
+    sourceList.hidden = true;
+
+    sources.forEach((source, index) => {
+      const item = createSourceCard(source);
+      if (index >= CHAT_SOURCE_PREVIEW_LIMIT) item.hidden = true;
+      sourceList.appendChild(item);
+    });
+
+    if (sources.length > CHAT_SOURCE_PREVIEW_LIMIT) {
+      const showAll = document.createElement('button');
+      showAll.type = 'button';
+      showAll.className = 'source-show-all';
+      showAll.setAttribute('aria-expanded', 'false');
+      showAll.setAttribute('aria-controls', detailId);
+      showAll.setAttribute('aria-label', `Show all ${sources.length} source cards`);
+      showAll.textContent = 'Show all sources';
+      showAll.onclick = () => {
+        sourceList.querySelectorAll('.source-tag[hidden]').forEach(item => { item.hidden = false; });
+        showAll.setAttribute('aria-expanded', 'true');
+        showAll.remove();
+      };
+      sourceList.appendChild(showAll);
+    }
+
+    toggle.onclick = () => {
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      sourceList.hidden = expanded;
+      toggle.setAttribute('aria-expanded', String(!expanded));
+      toggle.setAttribute(
+        'aria-label',
+        expanded
+          ? `Show source details for ${sources.length} ${sources.length === 1 ? 'chunk' : 'chunks'}`
+          : 'Hide source details'
+      );
+      toggle.textContent = expanded ? 'Show details' : 'Hide details';
+    };
+
+    bubble.appendChild(summary);
+    bubble.appendChild(sourceList);
+  }
+
+  function appendMessage(role, text, sources = []) {
+    const wrapper = document.getElementById('chatWrapper');
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.style.display = 'none';
+
+    const msg = document.createElement('div');
+    msg.className = `message ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = `avatar ${role}`;
+    avatar.setAttribute('role', 'img');
+    avatar.setAttribute('aria-label', role === 'user' ? 'You' : 'Kroma');
+    avatar.textContent = role === 'user' ? 'Y' : 'K';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    renderSafeMarkdown(bubble, text);
+
+    if (role !== 'user' && Array.isArray(sources) && sources.length > 0) {
+      appendChatSources(bubble, sources);
+    }
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    wrapper.appendChild(msg);
+    wrapper.scrollTop = wrapper.scrollHeight;
+    return msg;
+  }
+
+  function appendThinking() {
+    const wrapper = document.getElementById('chatWrapper');
+    const div = document.createElement('div');
+    div.className = 'thinking';
+    div.innerHTML = `<div class="dots"><span></span><span></span><span></span></div><span>Searching documents…</span>`;
+    wrapper.appendChild(div);
+    wrapper.scrollTop = wrapper.scrollHeight;
+    return div;
+  }
+
+  function updateMetrics(stats) {
+    if (!stats) return;
+    document.getElementById('metrics').style.display = 'flex';
+    document.getElementById('metDocs').textContent = (stats.docs || []).length;
+    document.getElementById('metPages').textContent = stats.total_pages || 0;
+    document.getElementById('metChunks').textContent = stats.total_chunks || 0;
+  }
+
+  function renderLibrary(docs) {
+    const list = document.getElementById('libraryList');
+    list.textContent = '';
+    if (!docs.length) {
+      const empty = document.createElement('span');
+      empty.className = 'empty-lib';
+      empty.textContent = 'No documents yet.';
+      list.appendChild(empty);
+      return;
+    }
+    docs.forEach(name => {
+      const docName = String(name ?? '');
+      const item = document.createElement('div');
+      item.className = 'doc-item';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'doc-check';
+      checkbox.dataset.name = docName;
+      checkbox.checked = true;
+      checkbox.style.cssText = 'accent-color:var(--gold);cursor:pointer;flex-shrink:0;';
+
+      const icon = createIcon('document', 'doc-icon ui-icon');
+
+      const info = document.createElement('div');
+      info.className = 'doc-info';
+
+      const docTitle = document.createElement('div');
+      docTitle.className = 'doc-name';
+      docTitle.title = docName;
+      docTitle.textContent = docName;
+      info.appendChild(docTitle);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn-delete';
+      deleteBtn.type = 'button';
+      deleteBtn.title = 'Remove';
+      deleteBtn.textContent = '✕';
+      deleteBtn.onclick = () => deleteDoc(docName);
+
+      item.appendChild(checkbox);
+      item.appendChild(icon);
+      item.appendChild(info);
+      item.appendChild(deleteBtn);
+      list.appendChild(item);
+    });
+  }
+
+  async function deleteDoc(name) {
+    const res = await apiFetch(`/api/docs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res.ok) {
+      resetDocumentSession();
+      showToast(`Removed: ${name}`, 'success');
+      await init();
+    }
+    else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || 'Could not remove file', 'error');
+    }
+  }
+
+  async function clearLibrary() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to clear custom files.', 'error');
+      return;
+    }
+    showConfirm('Remove all documents and reset the library?', async () => {
+      const res = await apiFetch('/api/library', { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.detail || 'Could not clear library', 'error');
+        return;
+      }
+      chatHistory = [];
+      isIndexed = false;
+      document.getElementById('metrics').style.display = 'none';
+      document.getElementById('suggestionsBar').style.display = 'none';
+      document.getElementById('exportBtn').style.display = 'none';
+      document.getElementById('topbarSub').textContent = 'Your AI-powered document assistant';
+      renderLibrary([]);
+      const wrapper = document.getElementById('chatWrapper');
+      wrapper.innerHTML = '';
+      showToast('Library cleared', 'success');
+      await init();
+    });
+  }
+  function exportChatPDF() {
+    if (chatHistory.length === 0) { showToast('No chat to export', 'error'); return; }
+
+    const wrapper = document.getElementById('chatWrapper');
+
+    const header = document.createElement('div');
+    header.className = 'print-header';
+    header.innerHTML = `
+      <strong style="font-size:1.2rem;">Kroma — Chat Export</strong><br>
+      <span style="font-size:0.85rem;color:#666;">${new Date().toLocaleString()}</span>
+    `;
+    wrapper.insertBefore(header, wrapper.firstChild);
+
+    window.print();
+
+    wrapper.removeChild(header);
+    showToast('PDF export opened', 'success');
+  }
+
+  function backToChat() {
+    currentView = 'chat';
+    hideSuggestions();
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = '';
+    wrapper.innerHTML = '';
+    if (chatHistory.length > 0) {
+      chatHistory.forEach(msg => {
+        if (msg.role === 'user') appendMessage('user', msg.content);
+        else if (msg.role === 'assistant') appendMessage('ai', msg.content, msg.sources || []);
+      });
+      document.getElementById('exportBtn').style.display = 'block';
+    } else if (isIndexed) {
+      fetchSuggestions();
+    }
+    showToast('Back to chat', 'success');
+  }
+
+  function newChat() {
+    saveCurrentChat();
+    resetCurrentChat();
+    currentView = 'chat';
+    document.getElementById('sendBtn').disabled = false;
+    if (isPublicDemoMode()) {
+      renderPublicDemoWelcome();
+      renderSuggestions(publicDemoQuestions);
+      showToast('New chat started', 'success');
+      return;
+    }
+    if (isIndexed) fetchSuggestions();
+    else document.getElementById('suggestionsBar').style.display = 'none';
+    const wrapper = document.getElementById('chatWrapper');
+    if (!isIndexed) {
+      wrapper.innerHTML = `
+        <div class="empty-state" id="emptyState">
+          <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <path d="M7 12h10"/>
+            <path d="M7 16h6"/>
+          </svg>
+          <h3>Ask your documents anything</h3>
+          <p>${NO_PROCESSED_MESSAGE}</p>
+          <div class="steps">
+            <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
+            <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
+          </div>
+        </div>`;
+    }
+    showToast('New chat started', 'success');
+  }
+
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  let quizData = [];
+  let quizAnswers = {};
+  let quizSourceCatalog = new Map();
+
+  async function generateQuiz(difficulty = null, count = null) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to generate study tools from custom files.', 'error');
+      return;
+    }
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
+
+    if (!difficulty || !count) {
+      showQuizSettings();
+      return;
+    }
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('quizBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await apiFetch('/api/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected, difficulty, count })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
+      quizData = Array.isArray(data.questions) ? data.questions : [];
+      quizSourceCatalog = new Map(
+        (Array.isArray(data.sources) ? data.sources : [])
+          .filter(source => source?.id)
+          .map(source => [source.id, source])
+      );
+      quizAnswers = {};
+      showQuiz(quizData, difficulty);
+      showToast('Quiz ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    setIconButton(btn, 'quiz', 'Quiz me');
+  }
+
+  function showQuizSettings() {
+    currentView = 'quiz';
+    hideSuggestions();
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
+
+    wrapper.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;width:100%;max-width:420px;display:flex;flex-direction:column;gap:1.25rem;">
+        <div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">Quiz Settings</div>
+          <div style="font-size:0.9rem;color:var(--text-3);">Customize your quiz before starting</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Difficulty</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="quiz-setting-btn active" data-group="diff" data-val="easy" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Easy</button>
+            <button class="quiz-setting-btn" data-group="diff" data-val="medium" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Medium</button>
+            <button class="quiz-setting-btn" data-group="diff" data-val="hard" onclick="selectSetting(this,'diff')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">Hard</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Number of Questions</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="quiz-setting-btn" data-group="count" data-val="5" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">5</button>
+            <button class="quiz-setting-btn active" data-group="count" data-val="8" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">8</button>
+            <button class="quiz-setting-btn" data-group="count" data-val="10" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">10</button>
+            <button class="quiz-setting-btn" data-group="count" data-val="15" onclick="selectSetting(this,'count')" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;">15</button>
+          </div>
+          <input id="quizCustomCount" type="number" min="3" max="30" placeholder="Or enter custom number (3–30)" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem 1rem;color:var(--text);font-size:1rem;font-family:'Outfit',sans-serif;outline:none;width:100%;margin-top:0.4rem;">
+        </div>
+
+        <button class="btn-primary" onclick="startQuizWithSettings()" style="margin-top:0.5rem;">Start Quiz</button>
+        <button class="btn-secondary" onclick="backToChat()" style="margin-top:-0.5rem;">← Cancel</button>
+      </div>
+    `;
+  }
+
+  function selectSetting(btn, group) {
+    document.querySelectorAll(`[data-group="${group}"]`).forEach(b => {
+      b.style.border = '1px solid var(--border)';
+      b.style.background = 'var(--bg)';
+      b.style.color = 'var(--text-2)';
+    });
+    btn.style.border = '1px solid var(--gold)';
+    btn.style.background = '#1c1200';
+    btn.style.color = 'var(--gold)';
+  }
+
+  function startQuizWithSettings() {
+    const diffBtn = [...document.querySelectorAll('[data-group="diff"]')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const difficulty = diffBtn?.dataset.val || 'medium';
+    const custom = document.getElementById('quizCustomCount')?.value;
+    if (custom && parseInt(custom) >= 3) {
+      generateQuiz(difficulty, parseInt(custom));
+      return;
+    }
+    const countBtn = [...document.querySelectorAll('[data-group="count"]')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const count = parseInt(countBtn?.dataset.val || '8');
+    generateQuiz(difficulty, count);
+  }
+
+  function showQuiz(questions, difficulty = 'medium') {
+    currentView = 'quiz';
+    hideSuggestions();
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    questions = Array.isArray(questions) ? questions : [];
+
+    const header = document.createElement('div');
+    header.className = 'quiz-header';
+    header.innerHTML = `
+      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex-shrink:0;">← Back to chat</button>
+      <span style="text-align:right;">${questions.length} questions · Select your answers then submit</span>
+    `;
+    wrapper.appendChild(header);
+
+    const qWrapper = document.createElement('div');
+    qWrapper.className = 'quiz-wrapper';
+    qWrapper.id = 'quizWrapper';
+
+    questions.forEach((q, i) => {
+      const qDiv = document.createElement('div');
+      qDiv.className = 'quiz-question';
+      qDiv.id = `q-${i}`;
+
+      const qNum = document.createElement('div');
+      qNum.className = 'quiz-q-num';
+      qNum.textContent = `Question ${i + 1} of ${questions.length}`;
+
+      const qText = document.createElement('div');
+      qText.className = 'quiz-q-text';
+      qText.textContent = q?.question || '';
+
+      const choices = document.createElement('div');
+      choices.className = 'quiz-choices';
+      (Array.isArray(q?.choices) ? q.choices : []).forEach(c => {
+        const letter = (c || '').charAt(0).toUpperCase();
+        const choiceBtn = document.createElement('button');
+        choiceBtn.className = 'quiz-choice';
+        choiceBtn.dataset.q = String(i);
+        choiceBtn.dataset.letter = letter;
+        choiceBtn.textContent = c;
+        choiceBtn.onclick = () => selectAnswer(i, letter, choiceBtn);
+        choices.appendChild(choiceBtn);
+      });
+
+      const explanation = document.createElement('div');
+      explanation.className = 'quiz-explanation';
+      explanation.id = `exp-${i}`;
+      const explanationText = document.createElement('div');
+      explanationText.textContent = `Explanation: ${q?.explanation || ''}`;
+      explanation.appendChild(explanationText);
+      const sourceList = document.createElement('div');
+      sourceList.className = 'sources';
+      sourceList.id = `quizSources-${i}`;
+      explanation.appendChild(sourceList);
+
+      qDiv.appendChild(qNum);
+      qDiv.appendChild(qText);
+      qDiv.appendChild(choices);
+      qDiv.appendChild(explanation);
+      qWrapper.appendChild(qDiv);
+    });
+
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'btn-primary';
+    submitBtn.id = 'submitQuizBtn';
+    submitBtn.textContent = 'Submit Quiz';
+    submitBtn.style.cssText = 'margin: 0 2rem 1.5rem; width: calc(100% - 4rem);';
+    submitBtn.onclick = submitQuiz;
+    qWrapper.appendChild(submitBtn);
+
+    wrapper.appendChild(qWrapper);
+  }
+
+  function selectAnswer(qIndex, letter, btn) {
+    const choices = document.querySelectorAll(`[data-q="${qIndex}"]`);
+    choices.forEach(c => c.classList.remove('selected'));
+    btn.classList.add('selected');
+    quizAnswers[qIndex] = letter;
+  }
+
+  function submitQuiz() {
+    const unanswered = quizData.filter((_, i) => !quizAnswers[i]);
+    if (unanswered.length > 0) {
+      showToast(`Answer all ${quizData.length} questions first`, 'error');
+      return;
+    }
+
+    let score = 0;
+    quizData.forEach((q, i) => {
+      const correct = q.answer.trim().charAt(0).toUpperCase();
+      const selected = quizAnswers[i];
+      const choices = document.querySelectorAll(`[data-q="${i}"]`);
+
+      choices.forEach(c => {
+        c.disabled = true;
+        if (c.dataset.letter === correct) c.classList.add('reveal-correct');
+        if (c.dataset.letter === selected && selected !== correct) c.classList.add('wrong');
+      });
+
+      renderQuizSources(q, i);
+      document.getElementById(`exp-${i}`).classList.add('show');
+      if (selected === correct) score++;
+    });
+
+    document.getElementById('submitQuizBtn').remove();
+
+    const msg = score === quizData.length ? 'Perfect score!' :
+                score >= quizData.length * 0.7 ? 'Great job!' :
+                score >= quizData.length * 0.5 ? 'Keep studying!' : 'Review the material and try again.';
+
+    const scoreDiv = document.createElement('div');
+    scoreDiv.className = 'quiz-score';
+    scoreDiv.innerHTML = `
+      <div class="quiz-score-num">${score}/${quizData.length}</div>
+      <div class="quiz-score-label">Your Score</div>
+      <div class="quiz-score-msg">${msg}</div>
+      <button class="btn-primary" onclick="generateQuiz()" style="width:auto;padding:0.6rem 1.5rem;">Try Again</button>
+    `;
+    document.getElementById('quizWrapper').appendChild(scoreDiv);
+    scoreDiv.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderQuizSources(question, index) {
+    const sourceList = document.getElementById(`quizSources-${index}`);
+    if (!sourceList) return;
+    sourceList.innerHTML = '';
+
+    const sourceIds = Array.isArray(question?.source_ids) ? question.source_ids : [];
+    const validSources = sourceIds
+      .map(id => quizSourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const location = sourceLocationLabel(source);
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
+  }
+
+  // ── HISTORY ──────────────────────────────────────────────────────────
+  const HISTORY_KEY = 'kroma_chat_history';
+
+  function setSavedChats(chats) {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(chats.slice(0, 20)));
+  }
+
+  function hasCurrentChatMessages() {
+    return chatHistory.length > 0;
+  }
+
+  function resetCurrentChat() {
+    chatHistory = [];
+    loadedChatId = null;
+    document.getElementById('exportBtn').style.display = 'none';
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+  }
+
+  function saveCurrentChat() {
+    if (!hasCurrentChatMessages()) return;
+    const saved = getSavedChats();
+    const title = chatHistory[0]?.content?.slice(0, 50) || 'Untitled chat';
+
+    if (loadedChatId) {
+      const entry = {
+        id: loadedChatId,
+        title,
+        date: new Date().toLocaleDateString(),
+        messages: [...chatHistory]
+      };
+      const idx = saved.findIndex(e => e.id === loadedChatId);
+      if (idx !== -1) {
+        saved[idx] = entry;
+      } else {
+        saved.unshift(entry);
+      }
+      setSavedChats(saved);
+      renderHistory();
+      return;
+    }
+
+    const id = Date.now();
+    const entry = {
+      id,
+      title,
+      date: new Date().toLocaleDateString(),
+      messages: [...chatHistory]
+    };
+    saved.unshift(entry);
+    setSavedChats(saved);
+    loadedChatId = id;
+    renderHistory();
+  }
+
+  function getSavedChats() {
+    try {
+      return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    } catch { return []; }
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    const saved = getSavedChats();
+    list.textContent = '';
+    if (!saved.length) {
+      const empty = document.createElement('span');
+      empty.className = 'empty-lib';
+      empty.textContent = 'No saved chats yet.';
+      list.appendChild(empty);
+      return;
+    }
+    saved.forEach(entry => {
+      const item = document.createElement('div');
+      const title = String(entry?.title ?? 'Untitled chat');
+      const date = String(entry?.date ?? '');
+      item.className = 'history-item';
+
+      const info = document.createElement('div');
+      info.className = 'history-info';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'history-title';
+      titleEl.title = title;
+      titleEl.textContent = title;
+
+      const dateEl = document.createElement('div');
+      dateEl.className = 'history-date';
+      dateEl.textContent = date;
+
+      info.appendChild(titleEl);
+      info.appendChild(dateEl);
+      item.appendChild(info);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'history-delete';
+      deleteBtn.setAttribute('aria-label', 'Delete chat');
+      deleteBtn.textContent = '✕';
+      deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteHistoryChat(entry.id);
+      };
+      item.appendChild(deleteBtn);
+
+      item.onclick = () => loadChat(entry);
+      list.appendChild(item);
+    });
+  }
+
+  function loadChat(entry) {
+    saveCurrentChat();
+    loadedChatId = entry.id || null;
+    chatHistory = [...(entry.messages || [])];
+    currentView = 'chat';
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    hideSuggestions();
+    entry.messages.forEach(msg => {
+      if (msg.role === 'user') appendMessage('user', msg.content);
+      else if (msg.role === 'assistant') appendMessage('ai', msg.content, msg.sources || []);
+    });
+    if (chatHistory.length > 0) document.getElementById('exportBtn').style.display = 'block';
+    showToast('Chat loaded', 'success');
+  }
+
+  function clearHistory() {
+    showConfirm('Clear all chat history?', () => {
+      localStorage.removeItem(HISTORY_KEY);
+      resetCurrentChat();
+      renderHistory();
+      showToast('History cleared', 'success');
+    });
+  }
+
+  function deleteHistoryChat(id) {
+    const saved = getSavedChats();
+    const filtered = saved.filter(entry => entry.id !== id);
+    setSavedChats(filtered);
+
+    if (loadedChatId === id) {
+      resetCurrentChat();
+      currentView = 'chat';
+      if (isPublicDemoMode()) {
+        renderPublicDemoWelcome();
+        renderSuggestions(publicDemoQuestions);
+      } else if (isIndexed) {
+        fetchSuggestions();
+      } else {
+        document.getElementById('suggestionsBar').style.display = 'none';
+        const wrapper = document.getElementById('chatWrapper');
+        wrapper.innerHTML = `
+          <div class="empty-state" id="emptyState">
+            <svg class="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M7 12h10"/>
+              <path d="M7 16h6"/>
+            </svg>
+            <h3>Ask your documents anything</h3>
+            <p>${NO_PROCESSED_MESSAGE}</p>
+            <div class="steps">
+              <div class="step"><span class="step-num">1</span><span>Upload a supported file</span></div>
+              <div class="step"><span class="step-num">2</span><span>Click <strong style="color:var(--gold)">Process Documents</strong></span></div>
+            </div>
+          </div>`;
+      }
+    }
+
+    renderHistory();
+    showToast('Chat deleted', 'success');
+  }
+
+  async function generateFlashcards(count = null) {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to generate study tools from custom files.', 'error');
+      return;
+    }
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
+
+    if (!count) { showFlashcardSettings(); return; }
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('flashcardBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await apiFetch('/api/flashcards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected, count })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to generate', 'error'); return; }
+      showFlashcards(data.flashcards, data.sources || []);
+      showToast('Flashcards ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    setIconButton(btn, 'list', 'Flashcards');
+  }
+
+  function showFlashcardSettings() {
+    currentView = 'flashcards';
+    hideSuggestions();
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;';
+    wrapper.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;width:100%;max-width:420px;display:flex;flex-direction:column;gap:1.25rem;">
+        <div>
+          <div style="font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:0.25rem;">Flashcard Settings</div>
+          <div style="font-size:0.90rem;color:var(--text-3);">Choose how many flashcards to generate</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Number of Cards</label>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="fc-setting-btn" data-val="5" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">5</button>
+            <button class="fc-setting-btn" data-val="8" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--gold);background:#1c1200;color:var(--gold);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">8</button>
+            <button class="fc-setting-btn" data-val="10" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">10</button>
+            <button class="fc-setting-btn" data-val="15" onclick="selectFcSetting(this)" style="flex:1;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text-2);font-family:'Outfit',sans-serif;font-weight:600;cursor:pointer;font-size:1rem;">15</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <label style="font-size:0.9rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;">Or enter a custom number</label>
+          <input id="fcCustomCount" type="number" min="3" max="30" placeholder="e.g. 12" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0.65rem 1rem;color:var(--text);font-size:1rem;font-family:'Outfit',sans-serif;outline:none;width:100%;">
+        </div>
+
+        <button class="btn-primary" onclick="startFlashcardsWithSettings()">Generate Flashcards</button>
+        <button class="btn-secondary" onclick="backToChat()" style="margin-top:-0.5rem;">← Cancel</button>
+      </div>
+    `;
+  }
+
+  function selectFcSetting(btn) {
+    document.querySelectorAll('.fc-setting-btn').forEach(b => {
+      b.style.border = '1px solid var(--border)';
+      b.style.background = 'var(--bg)';
+      b.style.color = 'var(--text-2)';
+    });
+    btn.style.border = '1px solid var(--gold)';
+    btn.style.background = '#1c1200';
+    btn.style.color = 'var(--gold)';
+    document.getElementById('fcCustomCount').value = '';
+  }
+
+  function startFlashcardsWithSettings() {
+    const custom = document.getElementById('fcCustomCount')?.value;
+    if (custom && parseInt(custom) >= 3) {
+      generateFlashcards(parseInt(custom));
+      return;
+    }
+    const selected = [...document.querySelectorAll('.fc-setting-btn')].find(b => b.style.color === 'var(--gold)' || b.style.color === 'rgb(234, 179, 8)');
+    const count = parseInt(selected?.dataset.val || '8');
+    generateFlashcards(count);
+  }
+
+  let flashcardIndex = 0;
+  let flashcardData = [];
+  let flashcardSourceCatalog = new Map();
+
+  function showFlashcards(cards, sources = []) {
+    currentView = 'flashcards';
+    hideSuggestions();
+    flashcardData = Array.isArray(cards) ? cards : [];
+    flashcardSourceCatalog = new Map(
+      (Array.isArray(sources) ? sources : [])
+        .filter(source => source?.id)
+        .map(source => [source.id, source])
+    );
+    if (!flashcardData.length) {
+      showToast('No flashcards generated', 'error');
+      return;
+    }
+    flashcardIndex = 0;
+
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.innerHTML = '';
+    wrapper.style.padding = '0';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.style.gap = '1.5rem';
+
+    const nav = document.createElement('div');
+    nav.style.cssText = 'display:flex;align-items:center;justify-content:space-between;width:100%;max-width:680px;padding:0 1rem;';
+    nav.innerHTML = `
+      <button class="btn-secondary" onclick="backToChat()" style="width:auto;padding:0.4rem 0.9rem;flex:none;">← Back to chat</button>
+      <span id="fcCounter" style="font-size:0.85rem;color:var(--text-3);">1 / ${flashcardData.length}</span>
+      <span style="font-size:0.75rem;color:var(--text-3);">Click card to flip</span>
+    `;
+    wrapper.appendChild(nav);
+
+    const cardContainer = document.createElement('div');
+    cardContainer.id = 'fcContainer';
+    cardContainer.style.cssText = 'width:100%;max-width:680px;padding:0 1rem;';
+    wrapper.appendChild(cardContainer);
+
+    const arrows = document.createElement('div');
+    arrows.style.cssText = 'display:flex;gap:1rem;align-items:center;';
+    arrows.innerHTML = `
+      <button class="btn-secondary" onclick="prevCard()" aria-label="Previous card" title="Previous card" style="width:44px;height:44px;font-size:1.1rem;flex:none;">←</button>
+      <button class="btn-secondary" onclick="nextCard()" aria-label="Next card" title="Next card" style="width:44px;height:44px;font-size:1.1rem;flex:none;">→</button>
+    `;
+    wrapper.appendChild(arrows);
+
+    renderCard();
+  }
+
+  function renderCard() {
+    const container = document.getElementById('fcContainer');
+    const card = flashcardData[flashcardIndex];
+    container.innerHTML = `
+      <div class="flashcard" id="currentCard" style="height:300px;max-width:680px;width:100%;">
+        <div class="flashcard-inner">
+          <div class="flashcard-front">
+            <div class="flashcard-label" style="font-size:1.2rem;">Question ${flashcardIndex + 1} of ${flashcardData.length}</div>
+            <div class="flashcard-text" id="fcQuestionText" style="font-size:1.25rem;"></div>
+          </div>
+          <div class="flashcard-back">
+            <div class="flashcard-label">Answer</div>
+            <div class="flashcard-text" id="fcAnswerText" style="font-size:1.15rem;"></div>
+            <div class="sources" id="fcSources"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('fcQuestionText').textContent = card?.question || '';
+    document.getElementById('fcAnswerText').textContent = card?.answer || '';
+    renderFlashcardSources(card);
+    document.getElementById('currentCard').addEventListener('click', () => {
+      document.getElementById('currentCard').classList.toggle('flipped');
+    });
+    document.getElementById('fcCounter').textContent = `${flashcardIndex + 1} / ${flashcardData.length}`;
+  }
+
+  function renderFlashcardSources(card) {
+    const sourceList = document.getElementById('fcSources');
+    sourceList.innerHTML = '';
+
+    const sourceIds = Array.isArray(card?.source_ids) ? card.source_ids : [];
+    const validSources = sourceIds
+      .map(id => flashcardSourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const location = sourceLocationLabel(source);
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
+  }
+
+  function nextCard() {
+    if (flashcardIndex < flashcardData.length - 1) {
+      flashcardIndex++;
+      renderCard();
+    }
+  }
+
+  function prevCard() {
+    if (flashcardIndex > 0) {
+      flashcardIndex--;
+      renderCard();
+    }
+  }
+
+  async function generateSummary() {
+    if (isPublicDemoMode()) {
+      showToast('Enter demo key to summarize custom files.', 'error');
+      return;
+    }
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) { showToast('Select at least one document', 'error'); return; }
+
+    saveCurrentChat();
+
+    document.getElementById('suggestionsBar').style.display = 'none';
+
+    const btn = document.getElementById('summaryBtn');
+    btn.disabled = true;
+    btn.textContent = 'Summarizing…';
+
+    try {
+      const res = await apiFetch('/api/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected })
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.detail || 'Failed to summarize', 'error'); return; }
+      showSummary(data.summary, data.sources || []);
+      showToast('Summary ready!', 'success');
+    } catch(e) {
+      showToast('Something went wrong', 'error');
+    }
+
+    btn.disabled = false;
+    setIconButton(btn, 'clipboard', 'Summarize');
+  }
+
+  function renderSummarySources(sourceList, sourceIds, sourceCatalog) {
+    sourceList.replaceChildren();
+    const ids = Array.isArray(sourceIds) ? sourceIds : [];
+    const validSources = ids
+      .map(id => sourceCatalog.get(id))
+      .filter(Boolean);
+
+    if (!validSources.length) {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      meta.textContent = 'Unsourced';
+      item.appendChild(meta);
+      sourceList.appendChild(item);
+      return;
+    }
+
+    validSources.forEach(source => {
+      const item = document.createElement('div');
+      item.className = 'source-tag';
+
+      const meta = document.createElement('div');
+      meta.className = 'source-meta';
+      const filename = source?.source || 'Unknown source';
+      const location = sourceLocationLabel(source);
+      const score = Number.isFinite(Number(source?.score)) ? `${source.score}%` : 'unknown score';
+      meta.textContent = `${source.id} • ${filename} • ${location} • Relevance ${score}`;
+      item.appendChild(meta);
+
+      if (source?.preview) {
+        const preview = document.createElement('div');
+        preview.className = 'source-preview';
+        preview.textContent = source.preview;
+        item.appendChild(preview);
+      }
+
+      sourceList.appendChild(item);
+    });
+  }
+
+  function stripJsonFence(text) {
+    const trimmed = String(text || '').trim();
+    const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return match ? match[1].trim() : trimmed;
+  }
+
+  function parseSummarySections(summary) {
+    if (Array.isArray(summary)) return summary;
+    if (Array.isArray(summary?.sections)) return summary.sections;
+    if (typeof summary === 'string') {
+      const text = stripJsonFence(summary);
+      try {
+        const parsed = JSON.parse(text);
+        return parseSummarySections(parsed);
+      } catch(e) {
+        const looksJson = /^[\[{]/.test(text);
+        return [{
+          heading: 'Overview',
+          text: looksJson ? 'Summary could not be parsed into readable sections. Try summarizing again.' : text,
+          source_ids: [],
+          bullets: []
+        }];
+      }
+    }
+    return [{
+      heading: 'Overview',
+      text: 'Summary could not be parsed into readable sections. Try summarizing again.',
+      source_ids: [],
+      bullets: []
+    }];
+  }
+
+  function showSummary(summary, sources = []) {
+    currentView = 'summary';
+    hideSuggestions();
+    const wrapper = document.getElementById('chatWrapper');
+    wrapper.style.cssText = '';
+    wrapper.replaceChildren();
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+    const backButton = document.createElement('button');
+    backButton.className = 'btn-secondary';
+    backButton.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;white-space:nowrap;';
+    backButton.textContent = '← Back to chat';
+    backButton.addEventListener('click', backToChat);
+    header.appendChild(backButton);
+
+    const title = document.createElement('span');
+    title.style.cssText = 'font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;';
+    title.textContent = 'Document Summary';
+    header.appendChild(title);
+    wrapper.appendChild(header);
+
+    const content = document.createElement('div');
+    content.style.cssText = 'flex:1;overflow-y:auto;padding:1.5rem 2rem;max-width:760px;margin:0 auto;width:100%;';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.style.cssText = 'max-width:100%;';
+
+    const sourceCatalog = new Map(
+      (Array.isArray(sources) ? sources : [])
+        .filter(source => source?.id)
+        .map(source => [source.id, source])
+    );
+    const sections = parseSummarySections(summary);
+
+    sections.forEach(section => {
+      const sectionEl = document.createElement('section');
+      sectionEl.style.cssText = 'margin-bottom:1.25rem;';
+
+      const heading = document.createElement('h2');
+      heading.textContent = section?.heading || 'Summary';
+      sectionEl.appendChild(heading);
+
+      if (section?.text) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = section.text;
+        sectionEl.appendChild(paragraph);
+
+        const sourceList = document.createElement('div');
+        sourceList.className = 'sources';
+        renderSummarySources(sourceList, section.source_ids, sourceCatalog);
+        sectionEl.appendChild(sourceList);
+      }
+
+      const bullets = Array.isArray(section?.bullets) ? section.bullets : [];
+      if (bullets.length) {
+        const list = document.createElement('ul');
+        bullets.forEach(bullet => {
+          const item = document.createElement('li');
+          const text = document.createElement('span');
+          text.textContent = bullet?.text || '';
+          item.appendChild(text);
+
+          const sourceList = document.createElement('div');
+          sourceList.className = 'sources';
+          renderSummarySources(sourceList, bullet?.source_ids, sourceCatalog);
+          item.appendChild(sourceList);
+          list.appendChild(item);
+        });
+        sectionEl.appendChild(list);
+      }
+
+      if (!section?.text && !bullets.length) {
+        const sourceList = document.createElement('div');
+        sourceList.className = 'sources';
+        renderSummarySources(sourceList, section?.source_ids, sourceCatalog);
+        sectionEl.appendChild(sourceList);
+      }
+
+      bubble.appendChild(sectionEl);
+    });
+
+    content.appendChild(bubble);
+    wrapper.appendChild(content);
+  }
+
+  function hideSuggestions() {
+    document.getElementById('suggestionsBar').style.display = 'none';
+  }
+
+  function canShowSuggestions() {
+    return (isIndexed || isPublicDemoMode())
+      && currentView === 'chat'
+      && chatHistory.length === 0
+      && loadedChatId === null;
+  }
+
+  let suggestionsPending = false;
+
+  async function fetchSuggestions() {
+    if (!canShowSuggestions()) return;
+    if (isPublicDemoMode()) {
+      renderSuggestions(publicDemoQuestions);
+      return;
+    }
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+    if (selected.length === 0) return;
+    if (suggestionsPending) return;
+    suggestionsPending = true;
+    try {
+      const res = await apiFetch('/api/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected })
+      });
+      if (!res.ok) { suggestionsPending = false; return; }
+      const data = await res.json();
+      suggestionsPending = false;
+      if (!data.questions?.length) return;
+      renderSuggestions(data.questions);
+    } catch(e) { suggestionsPending = false; }
+  }
+
+  function renderSuggestions(questions) {
+    const bar = document.getElementById('suggestionsBar');
+    const row = document.getElementById('suggestionsRow');
+    if (!canShowSuggestions()) {
+      bar.style.display = 'none';
+      return;
+    }
+    row.innerHTML = '';
+    questions.forEach(q => {
+      const btn = document.createElement('button');
+      btn.className = 'suggestion-btn';
+      btn.textContent = q;
+      btn.onclick = () => {
+        document.getElementById('chatInput').value = q;
+        bar.style.display = 'none';
+        sendMessage();
+      };
+      row.appendChild(btn);
+    });
+    bar.style.display = 'flex';
+    bar.style.flexDirection = 'column';
+  }
+
+  function showConfirm(message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'confirm-box';
+
+    const msg = document.createElement('div');
+    msg.className = 'confirm-msg';
+    msg.textContent = String(message ?? '');
+
+    const buttons = document.createElement('div');
+    buttons.className = 'confirm-btns';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.type = 'button';
+    cancelBtn.style.cssText = 'width:auto;padding:0.5rem 1rem;';
+    cancelBtn.textContent = 'Cancel';
+
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn-primary';
+    okBtn.type = 'button';
+    okBtn.style.cssText = 'width:auto;padding:0.5rem 1rem;background:#dc2626;color:white;';
+    okBtn.textContent = 'Confirm';
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(okBtn);
+    box.appendChild(msg);
+    box.appendChild(buttons);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    cancelBtn.onclick = () => overlay.remove();
+    okBtn.onclick = () => { overlay.remove(); onConfirm(); };
+  }
+
+  renderHistory();
+  init();
