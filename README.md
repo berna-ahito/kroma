@@ -2,9 +2,9 @@
 
 # Kroma
 
-### Trust-first document intelligence for your own notes, papers, and files.
+### Trust-first document intelligence for study and source-grounded knowledge work.
 
-Ask questions, generate study tools, and inspect the sources behind each answer across PDF, TXT, and Markdown documents.
+Ask questions, generate study tools, create source-grounded knowledge outputs, and inspect the sources behind each answer across PDF, TXT, and Markdown documents.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
@@ -22,17 +22,19 @@ Ask questions, generate study tools, and inspect the sources behind each answer 
 
 ## Overview
 
-Kroma is a local-document RAG app built around trust: upload your files, ask a question, and review the retrieved source chunks that shaped the answer. It is designed for students, researchers, and builders who need document answers they can trace back to their own material.
+Kroma is a local-document RAG app built around trust: upload your files, ask a question, and review the retrieved source chunks that shaped the answer.
+
+It is designed for **students, researchers, builders, and small teams** who need document answers they can trace back to their own material — whether that is studying for an exam, researching a topic, or turning internal documents into structured knowledge outputs for a team.
 
 It currently supports **PDF, TXT, and Markdown** uploads. Text and Markdown files must be UTF-8 or UTF-8-SIG encoded.
 
 ## Preview
 
-Real screenshots should be added at these paths when available. No mock screenshots are included.
-
 | Chat with sources |
 |---|
 | ![Kroma chat answer with source cards](assets/kroma-chat-sources.png) |
+
+Knowledge Copilot screenshots can be added here when available.
 
 ## What it does
 
@@ -45,18 +47,22 @@ Real screenshots should be added at these paths when available. No mock screensh
 | Quiz mode | Generate multiple-choice questions by difficulty, with source-linked explanations |
 | Smart summary | Create structured summaries with linked supporting chunks |
 | PDF export | Save a chat session as a clean PDF from the browser |
+| Knowledge Copilot | Run structured knowledge tasks against your documents: answer from sources, draft a reply, summarize for a team, extract action items, or run a risk check |
+| Verified facts / missing information | Knowledge Copilot outputs include facts verified from sources and a list of information that was not found in the documents |
+| Human review flags | Outputs targeting external audiences or containing sensitive content are flagged for human review before use |
 
 ## Why Kroma is different
 
-- **Sources are part of the product.** Answers, flashcards, quizzes, and summaries can expose the chunks used to support them.
-- **Missing-info guard.** Source cards are hidden for greetings, unsupported answers, or cases without retrieved context.
-- **No-context LLM guard.** If retrieval finds no usable context, Kroma returns a deterministic "not found in uploaded documents" response without calling Groq.
-- **Optional demo gate.** Public demos can set `KROMA_DEMO_KEY` to require a simple header key on upload, indexing, delete, unrestricted document chat, and study-generation endpoints.
+- **Sources are part of the product.** Answers, flashcards, quizzes, summaries, and Knowledge Copilot outputs can expose the chunks used to support them.
+- **Source-grounded structured outputs.** Knowledge Copilot returns verified facts, a suggested draft or response, missing information, and sources used — all grounded in retrieved document chunks.
+- **No-context LLM guard.** If retrieval finds no usable context, both document chat and Knowledge Copilot return a deterministic "not found in uploaded documents" response without calling Groq.
+- **Human review flags.** Outputs targeting external, customer, partner, investor, or distributor audiences are flagged as requiring human review before use.
+- **Source ID sanitization.** Study tools and Knowledge Copilot outputs use internal source IDs; invalid or model-invented IDs are stripped before rendering.
+- **Optional demo gate.** Public demos can set `KROMA_DEMO_KEY` to require a simple header key on upload, indexing, delete, unrestricted document chat, study-generation, and Knowledge Copilot endpoints.
 - **Public sample mode.** When the demo gate is active, visitors without the key can still try a bundled sample document with suggested questions and source cards.
-- **Source-linked study tools.** Generated study content uses internal source IDs, then strips invalid or model-invented IDs before rendering.
 - **Upload hardening.** Filenames are sanitized, path traversal is rejected, uploads are capped at 25 MB, and file content is checked against supported types.
 - **XSS-safe rendering.** AI Markdown output is sanitized before display, and most dynamic UI text is rendered through text nodes.
-- **Trust behavior evals.** Deterministic smoke evals cover source display rules, source ID sanitization, supported upload validation, and delete-path validation.
+- **Trust behavior evals.** Deterministic smoke evals cover source display rules, source ID sanitization, upload/delete validation, no-context behavior, and Knowledge Copilot human-review and malformed-output cases.
 
 ## Architecture
 
@@ -68,12 +74,12 @@ flowchart LR
     D --> E[SentenceTransformers embeddings]
     E --> F[(ChromaDB local vector store)]
 
-    G[User question or study request] --> H[FastAPI API routes]
+    G[Question / study request / Knowledge Copilot task] --> H[FastAPI API routes]
     H --> I[LangChain retrieval]
     F --> I
     I --> J[Retrieved context + source catalog]
     J --> K[Groq Llama model]
-    K --> L[Answer / flashcards / quiz / summary]
+    K --> L[Answer / study tools / knowledge output]
     J --> M[Source cards and source-linked UI]
     L --> M
 ```
@@ -122,18 +128,26 @@ Hosted demos on free tiers may take a short cold start after inactivity.
 .\venv\Scripts\python.exe evals\trust_behavior.py
 ```
 
+The evals cover: source display behavior, upload and delete validation, source ID sanitization, no-context behavior, and Knowledge Copilot human-review and malformed-output cases.
+
 ## Project structure
 
 ```text
 kroma/
-├── api.py              # FastAPI routes, upload handling, chat and study APIs
+├── api.py              # FastAPI routes, upload handling, chat, study, and Knowledge Copilot APIs
 ├── rag.py              # Retrieval, source handling, Groq generation
 ├── ingest.py           # Document loading, chunking, embeddings, ChromaDB writes
 ├── static/
 │   ├── landing.html    # Landing page
-│   └── index.html      # Main app UI
+│   ├── index.html      # Main app UI
+│   ├── app.js          # Frontend JavaScript
+│   ├── app.css         # Frontend styles
+│   └── vendor/         # Vendored third-party libraries
+├── assets/             # Screenshots and static assets
 ├── evals/
 │   └── trust_behavior.py
+├── Dockerfile
+├── render.yaml
 ├── requirements.txt
 └── README.md
 ```
@@ -163,7 +177,7 @@ Kroma can be deployed to Render as a Docker Web Service.
 - **Ephemeral filesystem.** Uploaded documents, Chroma index, and embedding model cache are lost on restart or redeploy. Uploads + re-indexing are needed after each restart.
 - **Cold starts.** The free tier spins down after inactivity. Expect 30–60 s delay on the first request.
 - **SentenceTransformer model download.** The embedding model (`BAAI/bge-small-en-v1.5`) downloads on first `/api/process` call, adding startup latency. The Docker image keeps Hugging Face/Transformers online and installs CPU-only PyTorch, so no CUDA/GPU packages are required.
-- **Demo protection.** If `KROMA_DEMO_KEY` is set, the app requires the `X-Kroma-Demo-Key` header for upload, processing, deletion, clear-library, unrestricted document chat, flashcards, quiz, summary, and suggestions. `/health`, `/`, `/app`, `/api/status`, and the bundled public sample demo stay public. The frontend stores the entered demo key in browser `sessionStorage` only.
+- **Demo protection.** If `KROMA_DEMO_KEY` is set, the app requires the `X-Kroma-Demo-Key` header for upload, processing, deletion, clear-library, unrestricted document chat, flashcards, quiz, summary, suggestions, and the Knowledge Copilot (`/api/business-copilot`) endpoint. `/health`, `/`, `/app`, `/api/status`, and the bundled public sample demo stay public. The frontend stores the entered demo key in browser `sessionStorage` only.
 - **Public sample demo.** Visitors without the key see: "Public demo uses a sample document. Enter demo key to test your own files." They can ask only the suggested sample questions; custom files and library actions remain blocked. The public sample uses deterministic bundled answers, so unkeyed visitors do not consume Groq tokens.
 - **Not production-ready.** For persistent storage, add a Render Disk, object storage, or a managed vector DB (e.g., Chroma Cloud, Pinecone, Supabase pgvector) and mount persistent volumes.
 
@@ -172,6 +186,8 @@ Kroma can be deployed to Render as a Docker Web Service.
 ## Portfolio context
 
 Kroma is Build 1 of my AI engineering portfolio. It demonstrates a full RAG loop: hardened uploads, local indexing, vector retrieval, LLM-backed answers, source-aware UI, and deterministic trust behavior checks.
+
+The Knowledge Copilot layer extends Kroma beyond study and chat into a real-world workflow tool: given your uploaded documents, it can produce source-grounded answers, draft replies, team summaries, extracted action items, and risk checks — with missing-information refusal when context is absent and human review flags when outputs are destined for external audiences.
 
 **Next builds:** Lead Qualification Agent · Content Repurposing Pipeline · Voice AI Agent · Multi-Agent Research Writer
 
