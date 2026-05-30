@@ -1,4 +1,4 @@
-  let chatHistory = [];
+let chatHistory = [];
   let isIndexed = false;
   let loadedChatId = null;
   let currentView = 'chat';
@@ -1862,6 +1862,398 @@
       srcSec.appendChild(toggle);
       const list = document.createElement('div');
       list.className = 'sources bc-sources';
+      list.id = toggleId;
+      list.hidden = true;
+      usedSources.forEach(s => list.appendChild(createSourceCard(s)));
+      toggle.addEventListener('click', () => {
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        list.hidden = expanded;
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        toggle.setAttribute('aria-label', expanded ? 'Show source details' : 'Hide source details');
+        toggle.textContent = expanded ? 'Show details' : 'Hide details';
+      });
+      srcSec.appendChild(list);
+    }
+    container.appendChild(srcSec);
+  }
+
+  // ── KNOWLEDGE AUDIT ────────────────────────────────────────────────────
+
+  function showKnowledgeAudit() {
+    const wrapper = document.getElementById('chatWrapper');
+
+    if (isPublicDemoMode()) {
+      currentView = 'knowledge-audit';
+      hideSuggestions();
+      wrapper.style.cssText = '';
+      wrapper.replaceChildren();
+      const container = document.createElement('div');
+      container.className = 'ka-container';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+      const backBtn = document.createElement('button');
+      backBtn.className = 'btn-secondary';
+      backBtn.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;';
+      backBtn.textContent = '\u2190 Back to chat';
+      backBtn.addEventListener('click', backToChat);
+      header.appendChild(backBtn);
+      container.appendChild(header);
+      const msg = document.createElement('div');
+      msg.style.cssText = 'padding:2rem;text-align:center;color:var(--text-3);font-size:0.95rem;line-height:1.6;';
+      msg.textContent = 'Enter your demo key in the sidebar to run Knowledge Audit with your own documents.';
+      container.appendChild(msg);
+      wrapper.appendChild(container);
+      const inputBar = document.querySelector('.input-bar');
+      if (inputBar) inputBar.style.display = 'none';
+      return;
+    }
+
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+
+    saveCurrentChat();
+    currentView = 'knowledge-audit';
+    hideSuggestions();
+
+    wrapper.style.cssText = '';
+    wrapper.replaceChildren();
+
+    const container = document.createElement('div');
+    container.className = 'ka-container';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;padding:0.75rem 2rem;border-bottom:1px solid var(--border);flex-shrink:0;gap:1rem;';
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn-secondary';
+    backBtn.style.cssText = 'width:auto;padding:0.4rem 0.9rem;flex:none;';
+    backBtn.textContent = '\u2190 Back to chat';
+    backBtn.addEventListener('click', backToChat);
+    header.appendChild(backBtn);
+    const headerTitle = document.createElement('span');
+    headerTitle.style.cssText = 'font-size:0.85rem;color:var(--text-3);flex:1;text-align:right;';
+    headerTitle.textContent = 'Knowledge Audit';
+    header.appendChild(headerTitle);
+    container.appendChild(header);
+
+    const content = document.createElement('div');
+    content.className = 'ka-content';
+
+    const heading = document.createElement('div');
+    heading.className = 'ka-heading';
+    heading.textContent = 'Knowledge Audit';
+    content.appendChild(heading);
+
+    const helper = document.createElement('div');
+    helper.className = 'ka-helper';
+    helper.textContent = 'Check whether selected documents are ready for source-grounded AI workflows.';
+    content.appendChild(helper);
+
+    const panel = document.createElement('div');
+    panel.className = 'ka-panel';
+
+    const errorEl = document.createElement('div');
+    errorEl.className = 'ka-error';
+    errorEl.id = 'kaError';
+    errorEl.style.display = 'none';
+    panel.appendChild(errorEl);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:1rem;margin-bottom:1.5rem;';
+
+    const runBtn = document.createElement('button');
+    runBtn.className = 'btn-primary';
+    runBtn.id = 'kaRunBtn';
+    runBtn.textContent = 'Run audit';
+    runBtn.addEventListener('click', runKnowledgeAudit);
+    runBtn.style.width = 'auto';
+    btnRow.appendChild(runBtn);
+
+    panel.appendChild(btnRow);
+
+    const resultEl = document.createElement('div');
+    resultEl.id = 'kaResult';
+    panel.appendChild(resultEl);
+
+    content.appendChild(panel);
+    container.appendChild(content);
+    wrapper.appendChild(container);
+
+    const inputBar = document.querySelector('.input-bar');
+    if (inputBar) inputBar.style.display = 'none';
+  }
+
+  async function runKnowledgeAudit() {
+    const errorEl = document.getElementById('kaError');
+    const runBtn = document.getElementById('kaRunBtn');
+    const resultEl = document.getElementById('kaResult');
+
+    errorEl.style.display = 'none';
+    const selected = [...document.querySelectorAll('.doc-check:checked')].map(el => el.dataset.name);
+
+    runBtn.disabled = true;
+    runBtn.textContent = 'Auditing...';
+    resultEl.textContent = '';
+
+    const loading = document.createElement('div');
+    loading.className = 'ka-loading';
+    loading.textContent = 'Auditing documents...';
+    resultEl.appendChild(loading);
+
+    try {
+      const res = await apiFetch('/api/knowledge-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected_docs: selected })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        resultEl.textContent = '';
+        errorEl.textContent = data.detail || 'Request failed.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      renderKnowledgeAuditResult(data, resultEl);
+    } catch(e) {
+      resultEl.textContent = '';
+      errorEl.textContent = 'Something went wrong. Please try again.';
+      errorEl.style.display = 'block';
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run audit';
+    }
+  }
+
+  function renderKnowledgeAuditResult(data, container) {
+    container.replaceChildren();
+    const result = data.result || {};
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+
+    // Readiness verdict
+    const verdict = result.readiness_verdict || {};
+    if (verdict.level) {
+      const verdictSec = document.createElement('div');
+      verdictSec.className = 'ka-verdict';
+
+      const badge = document.createElement('div');
+      badge.className = 'ka-verdict-badge';
+      const levelLow = verdict.level.toLowerCase();
+      if (levelLow.includes('low')) badge.classList.add('ka-low');
+      else if (levelLow.includes('high')) badge.classList.add('ka-high');
+      else badge.classList.add('ka-medium');
+      badge.textContent = verdict.level;
+      verdictSec.appendChild(badge);
+
+      if (Array.isArray(verdict.reasons) && verdict.reasons.length > 0) {
+        const reasonsCont = document.createElement('div');
+        reasonsCont.className = 'ka-verdict-reasons';
+        verdict.reasons.forEach(r => {
+          const re = document.createElement('div');
+          re.className = 'ka-verdict-reason';
+          re.textContent = r;
+          reasonsCont.appendChild(re);
+        });
+        verdictSec.appendChild(reasonsCont);
+      }
+      container.appendChild(verdictSec);
+    }
+
+    // Coverage summary
+    const cov = Array.isArray(result.coverage_summary) ? result.coverage_summary : [];
+    const covSec = document.createElement('div');
+    covSec.className = 'ka-section';
+    const covLabel = document.createElement('div');
+    covLabel.className = 'ka-section-label';
+    covLabel.textContent = 'Coverage summary';
+    covSec.appendChild(covLabel);
+    if (cov.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No coverage summary reported.';
+      covSec.appendChild(empty);
+    } else {
+      cov.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'ka-card';
+        const txt = document.createElement('div');
+        txt.className = 'ka-card-desc';
+        txt.textContent = item.area || '';
+        card.appendChild(txt);
+        if (Array.isArray(item.source_ids) && item.source_ids.length > 0) {
+          const chips = document.createElement('div');
+          chips.className = 'ka-chip-group';
+          item.source_ids.forEach(sid => {
+            const chip = document.createElement('span');
+            chip.className = 'ka-chip';
+            chip.textContent = sid;
+            chips.appendChild(chip);
+          });
+          card.appendChild(chips);
+        }
+        covSec.appendChild(card);
+      });
+    }
+    container.appendChild(covSec);
+
+    // Missing knowledge
+    const miss = Array.isArray(result.missing_knowledge) ? result.missing_knowledge : [];
+    const missSec = document.createElement('div');
+    missSec.className = 'ka-section';
+    const missLabel = document.createElement('div');
+    missLabel.className = 'ka-section-label';
+    missLabel.textContent = 'Missing knowledge';
+    missSec.appendChild(missLabel);
+    if (miss.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No missing knowledge reported.';
+      missSec.appendChild(empty);
+    } else {
+      miss.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'ka-card';
+        const txt = document.createElement('div');
+        txt.className = 'ka-card-desc';
+        txt.textContent = item;
+        card.appendChild(txt);
+        missSec.appendChild(card);
+      });
+    }
+    container.appendChild(missSec);
+
+    // Risk areas
+    const risks = Array.isArray(result.risk_areas) ? result.risk_areas : [];
+    const riskSec = document.createElement('div');
+    riskSec.className = 'ka-section';
+    const riskLabel = document.createElement('div');
+    riskLabel.className = 'ka-section-label';
+    riskLabel.textContent = 'Risk areas';
+    riskSec.appendChild(riskLabel);
+    if (risks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No risk areas reported.';
+      riskSec.appendChild(empty);
+    } else {
+      risks.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'ka-card';
+        const title = document.createElement('div');
+        title.className = 'ka-card-title';
+        title.textContent = item.area || '';
+        card.appendChild(title);
+        const desc = document.createElement('div');
+        desc.className = 'ka-card-desc';
+        desc.textContent = item.detail || '';
+        card.appendChild(desc);
+
+        if (Array.isArray(item.source_ids) && item.source_ids.length > 0) {
+          const chips = document.createElement('div');
+          chips.className = 'ka-chip-group';
+          item.source_ids.forEach(sid => {
+            const chip = document.createElement('span');
+            chip.className = 'ka-chip';
+            chip.textContent = sid;
+            chips.appendChild(chip);
+          });
+          card.appendChild(chips);
+        }
+        riskSec.appendChild(card);
+      });
+    }
+    container.appendChild(riskSec);
+
+    // Suggested next documents
+    const sugg = Array.isArray(result.suggested_next_documents) ? result.suggested_next_documents : [];
+    const suggSec = document.createElement('div');
+    suggSec.className = 'ka-section';
+    const suggLabel = document.createElement('div');
+    suggLabel.className = 'ka-section-label';
+    suggLabel.textContent = 'Suggested next documents';
+    suggSec.appendChild(suggLabel);
+    if (sugg.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No additional documents suggested.';
+      suggSec.appendChild(empty);
+    } else {
+      sugg.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'ka-card';
+        const txt = document.createElement('div');
+        txt.className = 'ka-card-desc';
+        txt.textContent = item;
+        card.appendChild(txt);
+        suggSec.appendChild(card);
+      });
+    }
+    container.appendChild(suggSec);
+
+    // Automation readiness
+    const auto = Array.isArray(result.automation_readiness) ? result.automation_readiness : [];
+    const autoSec = document.createElement('div');
+    autoSec.className = 'ka-section';
+    const autoLabel = document.createElement('div');
+    autoLabel.className = 'ka-section-label';
+    autoLabel.textContent = 'Automation readiness';
+    autoSec.appendChild(autoLabel);
+    if (auto.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No automation readiness data reported.';
+      autoSec.appendChild(empty);
+    } else {
+      auto.forEach(cat => {
+        const catGrp = document.createElement('div');
+        catGrp.className = 'ka-auto-group';
+        const title = document.createElement('div');
+        title.className = 'ka-auto-title';
+        title.textContent = cat.category || '';
+        catGrp.appendChild(title);
+
+        const items = Array.isArray(cat.items) ? cat.items : [];
+        if (items.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'ka-empty';
+          empty.textContent = 'None';
+          catGrp.appendChild(empty);
+        } else {
+          items.forEach(it => {
+            const itEl = document.createElement('div');
+            itEl.className = 'ka-auto-item';
+            itEl.textContent = it;
+            catGrp.appendChild(itEl);
+          });
+        }
+        autoSec.appendChild(catGrp);
+      });
+    }
+    container.appendChild(autoSec);
+
+    // Sources used
+    const sourcesUsed = Array.isArray(result.sources_used) ? result.sources_used : [];
+    const usedSources = sources.filter(s => s && sourcesUsed.includes(s.id));
+    const srcSec = document.createElement('div');
+    srcSec.className = 'ka-section';
+    const srcLabel = document.createElement('div');
+    srcLabel.className = 'ka-section-label';
+    srcLabel.textContent = 'Sources used';
+    srcSec.appendChild(srcLabel);
+    if (usedSources.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ka-empty';
+      empty.textContent = 'No sources were referenced.';
+      srcSec.appendChild(empty);
+    } else {
+      const toggleId = 'kaSrcToggle-' + Date.now();
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'source-toggle';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-controls', toggleId);
+      toggle.setAttribute('aria-label', 'Show source details');
+      toggle.textContent = 'Show details';
+      srcSec.appendChild(toggle);
+      const list = document.createElement('div');
+      list.className = 'sources ka-sources';
       list.id = toggleId;
       list.hidden = true;
       usedSources.forEach(s => list.appendChild(createSourceCard(s)));

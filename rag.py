@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Callable
 
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 from groq import Groq
 from langchain_community.embeddings import SentenceTransformerEmbeddings
@@ -817,6 +818,174 @@ def generate_flashcards(context: str, count: int = 8, source_ids: list | None = 
         temperature=0.1,
     )
     return _parse_json_array_response(response.choices[0].message.content)
+
+
+def compute_readiness_verdict(result: dict, source_context: str = "") -> dict:
+    coverage = len(result.get("coverage_summary", []))
+    risks = len(result.get("risk_areas", []))
+    missing = len(result.get("missing_knowledge", []))
+
+    if coverage < 2:
+        return {"level": "Low", "reasons": ["Insufficient knowledge coverage"]}
+    if risks >= 3:
+        return {"level": "Low", "reasons": ["Too many risk areas identified"]}
+    if missing >= 3:
+        return {"level": "Low", "reasons": ["Too much missing knowledge"]}
+
+    if coverage >= 4 and risks == 0 and missing <= 1:
+        return {"level": "High", "reasons": ["Excellent coverage with minimal risks and gaps"]}
+
+    return {"level": "Medium", "reasons": ["Adequate knowledge coverage but some gaps or risks exist"]}
+
+
+def generate_knowledge_audit(source_context: str, source_catalog: list) -> dict:
+    allowed_ids = [s["id"] for s in source_catalog] if source_catalog else []
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a Knowledge Audit assistant. Given document context, produce a structured audit of the knowledge. "
+                "Respond ONLY with a valid JSON object, no markdown, no explanation, no backticks. "
+                f"Allowed source IDs: {', '.join(allowed_ids)}. "
+                "Use ONLY these source IDs in your response. Never invent source IDs. "
+                "Format: {"
+                "\"coverage_summary\": [{\"area\": \"...\", \"source_ids\": [\"s1\"]}], "
+                "\"missing_knowledge\": [\"...\"], "
+                "\"risk_areas\": [{\"area\": \"...\", \"detail\": \"...\", \"source_ids\": [\"s1\"]}], "
+                "\"suggested_next_documents\": [\"...\"], "
+                "\"automation_readiness\": [{\"category\": \"Safe to answer from sources\", \"items\": [\"...\"]}], "
+                "\"sources_used\": [\"s1\"]"
+                "} "
+                "Avoid claiming coverage unless supported by source IDs. "
+                "Include missing information when docs are weak. "
+                "Flag risk areas: pricing, legal, finance, investor claims, scientific claims, medical claims, product claims, commercial terms, HR, complaints, refunds, negotiations. "
+                "sources_used should list all source IDs that were actually used."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"[Document context]\n{source_context}\n\n"
+                "Generate a knowledge audit based on this context."
+            ),
+        },
+    ]
+    response = _groq_client().chat.completions.create(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=0.3,
+    )
+    return _parse_business_copilot_response(response.choices[0].message.content)
+
+
+def normalize_knowledge_audit_output(payload) -> dict:
+    if not isinstance(payload, dict):
+        payload = {}
+    result = {
+        "coverage_summary": [],
+        "missing_knowledge": [],
+        "risk_areas": [],
+        "suggested_next_documents": [],
+        "automation_readiness": [],
+        "sources_used": [],
+    }
+
+    cs = payload.get("coverage_summary", [])
+    if isinstance(cs, list):
+        cleaned = []
+        for c in cs:
+            if not isinstance(c, dict):
+                continue
+            area = c.get("area", "")
+            if not isinstance(area, str) or not area.strip():
+                continue
+            raw_ids = c.get("source_ids", [])
+            if isinstance(raw_ids, str):
+                raw_ids = [raw_ids]
+            if not isinstance(raw_ids, list):
+                raw_ids = []
+            cleaned.append({"area": area, "source_ids": [str(s) for s in raw_ids if isinstance(s, str)]})
+        result["coverage_summary"] = cleaned
+
+    mk = payload.get("missing_knowledge")
+    if isinstance(mk, list):
+        result["missing_knowledge"] = [str(m) for m in mk if isinstance(m, str) and m.strip()]
+
+    ra = payload.get("risk_areas", [])
+    if isinstance(ra, list):
+        cleaned = []
+        for r in ra:
+            if not isinstance(r, dict):
+                continue
+            area = r.get("area", "")
+            detail = r.get("detail", "")
+            if not isinstance(area, str) or not area.strip():
+                continue
+            raw_ids = r.get("source_ids", [])
+            if isinstance(raw_ids, str):
+                raw_ids = [raw_ids]
+            if not isinstance(raw_ids, list):
+                raw_ids = []
+            cleaned.append({"area": area, "detail": str(detail), "source_ids": [str(s) for s in raw_ids if isinstance(s, str)]})
+        result["risk_areas"] = cleaned
+
+    snd = payload.get("suggested_next_documents")
+    if isinstance(snd, list):
+        result["suggested_next_documents"] = [str(m) for m in snd if isinstance(m, str) and m.strip()]
+
+    ar = payload.get("automation_readiness", [])
+    canonical_cats = {"Safe to answer from sources", "AI draft + human review", "Keep manual"}
+    auto_buckets = {c: [] for c in canonical_cats}
+    if isinstance(ar, list):
+        for a in ar:
+            if not isinstance(a, dict):
+                continue
+            cat = a.get("category", "")
+            if cat in auto_buckets:
+                items = a.get("items", [])
+                if isinstance(items, list):
+                    auto_buckets[cat].extend([str(i) for i in items if isinstance(i, str) and str(i).strip()])
+
+    result["automation_readiness"] = [{"category": k, "items": v} for k, v in auto_buckets.items()]
+
+    su = payload.get("sources_used")
+    if isinstance(su, list):
+        result["sources_used"] = [str(s) for s in su if isinstance(s, str)]
+
+    return result
+
+
+def sanitize_knowledge_audit_source_ids(result: dict, source_catalog: list) -> dict:
+    valid_ids = _valid_source_ids(source_catalog) if source_catalog else set()
+    sanitized = {
+        "coverage_summary": [],
+        "missing_knowledge": list(result.get("missing_knowledge", [])),
+        "risk_areas": [],
+        "suggested_next_documents": list(result.get("suggested_next_documents", [])),
+        "automation_readiness": list(result.get("automation_readiness", [])),
+        "sources_used": _sanitize_source_ids(result.get("sources_used", []), valid_ids),
+    }
+    for cov in result.get("coverage_summary", []):
+        if not isinstance(cov, dict):
+            continue
+        area = cov.get("area", "")
+        if not isinstance(area, str) or not area.strip():
+            continue
+        clean_ids = _sanitize_source_ids(cov.get("source_ids", []), valid_ids)
+        if clean_ids:
+            sanitized["coverage_summary"].append({"area": area, "source_ids": clean_ids})
+
+    for risk in result.get("risk_areas", []):
+        if not isinstance(risk, dict):
+            continue
+        area = risk.get("area", "")
+        detail = risk.get("detail", "")
+        if not isinstance(area, str) or not area.strip():
+            continue
+        clean_ids = _sanitize_source_ids(risk.get("source_ids", []), valid_ids)
+        sanitized["risk_areas"].append({"area": area, "detail": detail, "source_ids": clean_ids})
+
+    return sanitized
 
 
 if __name__ == "__main__":

@@ -30,17 +30,21 @@ from rag import (
     build_source_linked_context,
     business_context_is_relevant,
     business_needs_human_review,
+    compute_readiness_verdict,
     generate_answer,
     generate_business_copilot_output,
     generate_flashcards,
+    generate_knowledge_audit,
     generate_quiz,
     generate_suggestions,
     generate_summary,
     normalize_business_copilot_output,
+    normalize_knowledge_audit_output,
     normalize_summary_sections,
     retrieve_chunks,
     sanitize_business_copilot_source_ids,
     sanitize_flashcards_source_ids,
+    sanitize_knowledge_audit_source_ids,
     sanitize_quiz_source_ids,
     sanitize_summary_source_ids,
     should_show_sources,
@@ -610,6 +614,50 @@ def business_copilot(req: BusinessCopilotRequest, request: Request):
             sanitized.get("missing_information", []),
         )
     sanitized["needs_human_review"] = hr
+
+    return {"result": sanitized, "sources": source_catalog}
+
+
+class KnowledgeAuditRequest(BaseModel):
+    selected_docs: list = []
+
+
+KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE = {
+    "result": {
+        "coverage_summary": [],
+        "missing_knowledge": ["No relevant information was found in the selected documents."],
+        "risk_areas": [],
+        "suggested_next_documents": [],
+        "automation_readiness": [
+            {"category": "Keep manual", "items": ["All tasks — no source context available"]}
+        ],
+        "readiness_verdict": {
+            "level": "Low",
+            "reasons": ["No source-grounded context available"]
+        },
+        "sources_used": []
+    },
+    "sources": []
+}
+
+
+@app.post("/api/knowledge-audit")
+def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
+    _require_demo_key(request)
+    selected_docs = _validate_selected_docs(req.selected_docs)
+    context, sources = retrieve_chunks("overview summary key topics policies terms procedures guidelines", n_results=20, selected_docs=selected_docs)
+
+    source_catalog = build_source_catalog(sources) if sources else []
+    source_context = build_source_linked_context(context, source_catalog) if context and source_catalog else ""
+
+    if not business_context_is_relevant(sources):
+        return KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE
+
+    raw = generate_knowledge_audit(source_context, source_catalog)
+    normalized = normalize_knowledge_audit_output(raw)
+    sanitized = sanitize_knowledge_audit_source_ids(normalized, source_catalog)
+    verdict = compute_readiness_verdict(sanitized, source_context)
+    sanitized["readiness_verdict"] = verdict
 
     return {"result": sanitized, "sources": source_catalog}
 
