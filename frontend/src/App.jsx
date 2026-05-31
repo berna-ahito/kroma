@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat } from './api/kromaApi.js'
+import { sendChat, getStatus } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 
@@ -16,6 +16,11 @@ export default function App() {
   const [isLoading,  setIsLoading]  = useState(false)
   const [error,      setError]      = useState(null)
 
+  // Status state — fetched once on mount
+  const [status,        setStatus]        = useState(null)
+  const [statusLoading, setStatusLoading] = useState(true)
+  const [statusError,   setStatusError]   = useState(null)
+
   const chatEndRef   = useRef(null)
   const textareaRef  = useRef(null)
 
@@ -31,6 +36,33 @@ export default function App() {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }, [inputValue])
+
+  // Fetch backend status on mount (read-only, no refresh on chat send)
+  useEffect(() => {
+    let cancelled = false
+    setStatusLoading(true)
+    setStatusError(null)
+    getStatus()
+      .then(data => {
+        if (!cancelled) {
+          setStatus(data)
+          setStatusLoading(false)
+        }
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setStatusError(err.message || 'Failed to load status')
+          setStatusLoading(false)
+        }
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Derived values from status
+  const docCount   = status?.docs?.length ?? 0
+  const pageCount  = status?.stats?.total_pages ?? 0
+  const chunkCount = status?.stats?.total_chunks ?? 0
+  const docList    = status?.docs ?? []
 
   async function handleSend() {
     const trimmed = inputValue.trim()
@@ -141,7 +173,19 @@ export default function App() {
 
         <div className="sidebar-label">Library</div>
         <div className="library-list" id="libraryList">
-          <span className="empty-lib">No documents yet.</span>
+          {statusLoading ? (
+            <span className="empty-lib">Loading…</span>
+          ) : statusError ? (
+            <span className="empty-lib">Unable to load library.</span>
+          ) : docList.length === 0 ? (
+            <span className="empty-lib">No documents yet.</span>
+          ) : (
+            docList.map(filename => (
+              <div key={filename} style={{ padding: '0.25rem 0', fontSize: '0.85rem', color: 'var(--text-2)', wordBreak: 'break-all' }}>
+                {filename}
+              </div>
+            ))
+          )}
         </div>
 
         <hr className="divider" />
@@ -231,15 +275,15 @@ export default function App() {
         <div className="metrics" id="metrics">
           <div className="metric-card">
             <span className="label">Documents</span>
-            <span className="value" id="metDocs">0</span>
+            <span className="value" id="metDocs">{statusLoading ? '…' : docCount}</span>
           </div>
           <div className="metric-card">
             <span className="label">Pages</span>
-            <span className="value" id="metPages">0</span>
+            <span className="value" id="metPages">{statusLoading ? '…' : pageCount}</span>
           </div>
           <div className="metric-card">
             <span className="label">Chunks</span>
-            <span className="value" id="metChunks">0</span>
+            <span className="value" id="metChunks">{statusLoading ? '…' : chunkCount}</span>
           </div>
         </div>
 
