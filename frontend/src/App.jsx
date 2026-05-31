@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat, getStatus } from './api/kromaApi.js'
+import { sendChat, getStatus, uploadDocument, processDocuments } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 
@@ -21,6 +21,13 @@ export default function App() {
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError,   setStatusError]   = useState(null)
 
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
+  const [uploadMessage, setUploadMessage] = useState(null)
+  const [processing, setProcessing] = useState(false)
+  const [processError, setProcessError] = useState(null)
+  const [processMessage, setProcessMessage] = useState(null)
+
   const chatEndRef   = useRef(null)
   const textareaRef  = useRef(null)
 
@@ -37,25 +44,22 @@ export default function App() {
     el.style.height = `${el.scrollHeight}px`
   }, [inputValue])
 
-  // Fetch backend status on mount (read-only, no refresh on chat send)
-  useEffect(() => {
-    let cancelled = false
+  const fetchStatus = async () => {
     setStatusLoading(true)
     setStatusError(null)
-    getStatus()
-      .then(data => {
-        if (!cancelled) {
-          setStatus(data)
-          setStatusLoading(false)
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          setStatusError(err.message || 'Failed to load status')
-          setStatusLoading(false)
-        }
-      })
-    return () => { cancelled = true }
+    try {
+      const data = await getStatus()
+      setStatus(data)
+    } catch (err) {
+      setStatusError(err.message || 'Failed to load status')
+    } finally {
+      setStatusLoading(false)
+    }
+  }
+
+  // Fetch backend status on mount (read-only, no refresh on chat send in R3B)
+  useEffect(() => {
+    fetchStatus()
   }, [])
 
   // Derived values from status
@@ -63,6 +67,51 @@ export default function App() {
   const pageCount  = status?.stats?.total_pages ?? 0
   const chunkCount = status?.stats?.total_chunks ?? 0
   const docList    = status?.docs ?? []
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files)
+    if (!files.length) return
+    setUploading(true)
+    setUploadError(null)
+    setUploadMessage(null)
+    setProcessError(null)
+
+    let hasError = false
+    try {
+      for (const file of files) {
+        try {
+          await uploadDocument(file)
+        } catch (err) {
+          setUploadError(err.message || `Failed to upload ${file.name}`)
+          hasError = true
+          break
+        }
+      }
+      if (!hasError) {
+        setUploadMessage(`Uploaded ${files.length} file(s).`)
+        await fetchStatus()
+      }
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleProcess = async () => {
+    setProcessing(true)
+    setProcessError(null)
+    setProcessMessage(null)
+    
+    try {
+      await processDocuments()
+      setProcessMessage('Documents processed.')
+      await fetchStatus()
+    } catch (err) {
+      setProcessError(err.message || 'Processing failed.')
+    } finally {
+      setProcessing(false)
+    }
+  }
 
   async function handleSend() {
     const trimmed = inputValue.trim()
@@ -154,20 +203,38 @@ export default function App() {
 
         <div className="sidebar-label">Upload</div>
         <label className="upload-area" id="uploadArea">
-          <input type="file" id="fileInput" accept=".pdf,.txt,.md,.markdown" multiple style={{ display: 'none' }} disabled />
+          <input 
+            type="file" 
+            id="fileInput" 
+            accept=".pdf,.txt,.md,.markdown" 
+            multiple 
+            style={{ display: 'none' }} 
+            onChange={handleUpload}
+            disabled={uploading || processing} 
+          />
           <svg className="upload-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
             <path d="M14 2v5h5"/>
             <path d="M9 13h6"/>
             <path d="M9 17h4"/>
           </svg>
-          <span className="upload-title">Click or drag to upload</span>
-          <span className="upload-hint">PDF, TXT, Markdown · 25MB max</span>
+          <span className="upload-title">{uploading ? 'Uploading...' : 'Click or drag to upload'}</span>
+          <span className="upload-hint">{uploading ? 'Please wait...' : 'PDF, TXT, Markdown · 25MB max'}</span>
         </label>
+        {uploadError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadError}</div>}
+        {uploadMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadMessage}</div>}
 
-        <button className="btn-primary" id="processBtn">
-          Process Documents
+        <button 
+          className="btn-primary" 
+          id="processBtn" 
+          onClick={handleProcess}
+          disabled={uploading || processing}
+          style={{ marginTop: '0.75rem' }}
+        >
+          {processing ? 'Processing...' : 'Process Documents'}
         </button>
+        {processError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processError}</div>}
+        {processMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processMessage}</div>}
 
         <hr className="divider" />
 
