@@ -7,16 +7,29 @@ import { marked } from 'marked'
 marked.use({ gfm: true, breaks: true })
 
 // Belt-and-suspenders on top of DOMPurify defaults.
+// ADD_ATTR allows DOMPurify to retain target/rel after the hook sets them;
+// without it DOMPurify strips those attributes post-hook.
 const PURIFY_CONFIG = {
   FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed'],
+  ADD_ATTR:    ['target', 'rel'],
 }
+
+// Module-scoped hook — registered once, not inside the React component.
+// Enforces target="_blank" and rel="noopener noreferrer" on every <a> tag
+// that survives sanitization, preventing opener attacks.
+DOMPurify.addHook('afterSanitizeAttributes', node => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer')
+  }
+})
 
 /**
  * Renders assistant Markdown content safely.
  *
  * Security contract:
  *   - marked.parse()  → raw HTML string (NOT sanitized)
- *   - DOMPurify.sanitize() → safeHtml (sanitized)
+ *   - DOMPurify.sanitize() → safeHtml (sanitized, links hardened by hook)
  *   - dangerouslySetInnerHTML receives ONLY safeHtml — never rawHtml directly.
  *
  * Usage: assistant messages only.

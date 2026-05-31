@@ -579,7 +579,25 @@
     border-radius: 12px 12px 4px 12px;
   }
 
+  /* MARKDOWN-BODY — scoped link and hr polish */
+  .markdown-body a {
+    color: var(--gold);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .markdown-body a:hover {
+    color: #f59e0b;
+  }
+
+  .markdown-body hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0.6rem 0;
+  }
+
   /* SOURCES */
+
   .sources {
     margin-top: 0.6rem;
     padding-top: 0.6rem;

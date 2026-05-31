@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { sendChat } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
@@ -16,6 +16,22 @@ export default function App() {
   const [isLoading,  setIsLoading]  = useState(false)
   const [error,      setError]      = useState(null)
 
+  const chatEndRef   = useRef(null)
+  const textareaRef  = useRef(null)
+
+  // Auto-scroll: fires when a new message arrives or loading state changes
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isLoading])
+
+  // Textarea auto-resize: collapse first so deletions shrink the box
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [inputValue])
+
   async function handleSend() {
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
@@ -28,6 +44,8 @@ export default function App() {
 
     setMessages(prev => [...prev, userMsg])
     setInputValue('')
+    // Reset textarea height so it returns to single-row after send
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setError(null)
     setIsLoading(true)
 
@@ -307,11 +325,14 @@ export default function App() {
             </div>
           )}
 
+          {/* Auto-scroll sentinel — scrollIntoView targets this element */}
+          <div ref={chatEndRef} aria-hidden="true" />
         </div>
 
         {/* INPUT BAR */}
         <div className="input-bar">
           <textarea
+            ref={textareaRef}
             id="chatInput"
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
