@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { sendChat } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
+import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 
 // Stable unique id for React keys — no external lib needed
 function genId() {
@@ -264,7 +265,10 @@ export default function App() {
                 {msg.role === 'user' ? 'YOU' : 'AI'}
               </div>
               <div className="bubble">
-                {msg.content}
+                {msg.role === 'assistant'
+                  ? <SafeMarkdown content={msg.content} />
+                  : msg.content
+                }
                 {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
                   <SourceList sources={msg.sources} />
                 )}
