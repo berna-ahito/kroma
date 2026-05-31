@@ -47,6 +47,7 @@ export default function App() {
 
   const libraryBusy = uploading || processing || Boolean(deletingDoc) || clearing
 
+  const chatWrapperRef = useRef(null)
   const chatEndRef   = useRef(null)
   const textareaRef  = useRef(null)
 
@@ -340,6 +341,45 @@ export default function App() {
     // Shift+Enter: browser inserts newline — no code needed
   }
 
+  function handleExport() {
+    if (messages.length === 0) {
+      setError('No chat to export.')
+      return
+    }
+
+    const wrapper = chatWrapperRef.current
+    if (!wrapper) {
+      window.print()
+      return
+    }
+
+    const existingHeader = wrapper.querySelector('.print-header')
+    if (existingHeader) existingHeader.remove()
+
+    const header = document.createElement('div')
+    header.className = 'print-header'
+    header.innerHTML = `
+      <h1>Kroma — Chat Export</h1>
+      <p>${new Date().toLocaleString()}</p>
+    `
+
+    const cleanup = () => {
+      if (header.parentNode) {
+        header.parentNode.removeChild(header)
+      }
+      window.removeEventListener('afterprint', cleanup)
+    }
+
+    wrapper.insertBefore(header, wrapper.firstChild)
+    window.addEventListener('afterprint', cleanup, { once: true })
+
+    try {
+      window.print()
+    } finally {
+      cleanup()
+    }
+  }
+
   const canSend = inputValue.trim() !== '' && !isLoading
 
   return (
@@ -581,7 +621,7 @@ export default function App() {
             <div className="topbar-title" id="topbarTitle">Kroma</div>
             <div className="topbar-sub" id="topbarSub">Your source-grounded study assistant</div>
           </div>
-          <button className="btn-secondary" id="exportBtn" style={{ width: 'auto', padding: '0.5rem 1.25rem', display: 'none', flexShrink: 0, whiteSpace: 'nowrap', maxWidth: '140px' }}>
+          <button className="btn-secondary" id="exportBtn" onClick={handleExport} style={{ width: 'auto', padding: '0.5rem 1.25rem', display: messages.length > 0 ? 'flex' : 'none', flexShrink: 0, whiteSpace: 'nowrap', maxWidth: '140px' }}>
             <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M12 3v12"/>
               <path d="m7 10 5 5 5-5"/>
@@ -608,7 +648,7 @@ export default function App() {
         </div>
 
         {/* CHAT AREA */}
-        <div className="chat-wrapper" id="chatWrapper">
+        <div className="chat-wrapper" id="chatWrapper" ref={chatWrapperRef}>
 
           {/* Empty state — hidden once messages exist */}
           {messages.length === 0 && !isLoading && (
