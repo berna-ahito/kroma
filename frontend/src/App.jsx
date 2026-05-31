@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions } from './api/kromaApi.js'
+import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
+import SummaryView from './components/study/SummaryView.jsx'
+import FlashcardsView from './components/study/FlashcardsView.jsx'
+import QuizView from './components/study/QuizView.jsx'
 
 // Stable unique id for React keys — no external lib needed
 function genId() {
@@ -11,6 +14,13 @@ function genId() {
 }
 
 export default function App() {
+  const [currentView, setCurrentView] = useState('chat')
+  const [studyLoading, setStudyLoading] = useState(false)
+  const [studyError, setStudyError] = useState(null)
+  const [summaryData, setSummaryData] = useState(null)
+  const [flashcardData, setFlashcardData] = useState(null)
+  const [quizData, setQuizData] = useState(null)
+
   const [inputValue, setInputValue] = useState('')
   const [messages,   setMessages]   = useState([])
   const [isLoading,  setIsLoading]  = useState(false)
@@ -46,6 +56,7 @@ export default function App() {
   const [loadedChatId, setLoadedChatId] = useState(null)
 
   const libraryBusy = uploading || processing || Boolean(deletingDoc) || clearing
+  const studyBusy = studyLoading || uploading || processing || Boolean(deletingDoc) || clearing || isLoading
 
   const chatWrapperRef = useRef(null)
   const chatEndRef   = useRef(null)
@@ -292,6 +303,48 @@ export default function App() {
     }
   }
 
+  const handleGenerateSummary = async () => {
+    setCurrentView('summary')
+    setStudyLoading(true)
+    setStudyError(null)
+    try {
+      const data = await generateSummary({ selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      setSummaryData(data)
+    } catch (err) {
+      setStudyError(err)
+    } finally {
+      setStudyLoading(false)
+    }
+  }
+
+  const handleGenerateFlashcards = async () => {
+    setCurrentView('flashcards')
+    setStudyLoading(true)
+    setStudyError(null)
+    try {
+      const data = await generateFlashcards({ count: 8, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      setFlashcardData(data)
+    } catch (err) {
+      setStudyError(err)
+    } finally {
+      setStudyLoading(false)
+    }
+  }
+
+  const handleGenerateQuiz = async () => {
+    setCurrentView('quiz')
+    setStudyLoading(true)
+    setStudyError(null)
+    try {
+      const data = await generateQuiz({ difficulty: 'medium', count: 8, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      setQuizData(data)
+    } catch (err) {
+      setStudyError(err)
+    } finally {
+      setStudyLoading(false)
+    }
+  }
+
   async function handleSend() {
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
@@ -521,7 +574,7 @@ export default function App() {
         <hr className="divider" />
 
         <div className="sidebar-label">Tools</div>
-        <button className="btn-primary" id="flashcardBtn">
+        <button className="btn-primary" id="flashcardBtn" onClick={handleGenerateFlashcards} disabled={studyBusy}>
           <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M8 6h11"/>
             <path d="M8 12h11"/>
@@ -532,7 +585,7 @@ export default function App() {
           </svg>
           <span>Flashcards</span>
         </button>
-        <button className="btn-primary" id="quizBtn" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
+        <button className="btn-primary" id="quizBtn" onClick={handleGenerateQuiz} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
           <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="9"/>
             <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5"/>
@@ -540,7 +593,7 @@ export default function App() {
           </svg>
           <span>Quiz me</span>
         </button>
-        <button className="btn-primary" id="summaryBtn" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
+        <button className="btn-primary" id="summaryBtn" onClick={handleGenerateSummary} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
           <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M9 4h6"/>
             <path d="M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2"/>
@@ -631,154 +684,179 @@ export default function App() {
           </button>
         </div>
 
-        {/* METRICS */}
-        <div className="metrics" id="metrics">
-          <div className="metric-card">
-            <span className="label">Documents</span>
-            <span className="value" id="metDocs">{statusLoading ? '…' : docCount}</span>
-          </div>
-          <div className="metric-card">
-            <span className="label">Pages</span>
-            <span className="value" id="metPages">{statusLoading ? '…' : pageCount}</span>
-          </div>
-          <div className="metric-card">
-            <span className="label">Chunks</span>
-            <span className="value" id="metChunks">{statusLoading ? '…' : chunkCount}</span>
-          </div>
-        </div>
+        {currentView === 'chat' ? (
+          <>
+            {/* METRICS */}
+            <div className="metrics" id="metrics">
+              <div className="metric-card">
+                <span className="label">Documents</span>
+                <span className="value" id="metDocs">{statusLoading ? '…' : docCount}</span>
+              </div>
+              <div className="metric-card">
+                <span className="label">Pages</span>
+                <span className="value" id="metPages">{statusLoading ? '…' : pageCount}</span>
+              </div>
+              <div className="metric-card">
+                <span className="label">Chunks</span>
+                <span className="value" id="metChunks">{statusLoading ? '…' : chunkCount}</span>
+              </div>
+            </div>
 
-        {/* CHAT AREA */}
-        <div className="chat-wrapper" id="chatWrapper" ref={chatWrapperRef}>
+            {/* CHAT AREA */}
+            <div className="chat-wrapper" id="chatWrapper" ref={chatWrapperRef}>
 
-          {/* Empty state — hidden once messages exist */}
-          {messages.length === 0 && !isLoading && (
-            <>
-              <div className="empty-state" id="emptyState">
-                <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                  <path d="M7 12h10"/>
-                  <path d="M7 16h6"/>
-                </svg>
-                <h3>Ask your documents anything</h3>
-                <p>No processed documents are available. Upload and process a document first.</p>
-                <div className="steps">
-                  <div className="step">
-                    <span className="step-num">1</span>
-                    <span>Upload a supported file from your computer</span>
+              {/* Empty state — hidden once messages exist */}
+              {messages.length === 0 && !isLoading && (
+                <>
+                  <div className="empty-state" id="emptyState">
+                    <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                      <path d="M7 12h10"/>
+                      <path d="M7 16h6"/>
+                    </svg>
+                    <h3>Ask your documents anything</h3>
+                    <p>No processed documents are available. Upload and process a document first.</p>
+                    <div className="steps">
+                      <div className="step">
+                        <span className="step-num">1</span>
+                        <span>Upload a supported file from your computer</span>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">2</span>
+                        <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">3</span>
+                        <span>Ask questions and review the cited sources</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="step">
-                    <span className="step-num">2</span>
-                    <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
+
+                  {inputValue.trim() === '' && suggestions.length > 0 && (
+                    <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
+                      <div className="suggestions-label">Suggested Questions</div>
+                      <div className="suggestions-row">
+                        {suggestions.map((s, idx) => (
+                          <button 
+                            key={idx} 
+                            className="suggestion-btn" 
+                            onClick={() => setInputValue(s)}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Message list */}
+              {messages.map(msg => (
+                <div
+                  key={msg.id}
+                  className={`message${msg.role === 'user' ? ' user' : ''}`}
+                >
+                  <div className={`avatar${msg.role === 'user' ? ' user' : ' ai'}`}>
+                    {msg.role === 'user' ? 'YOU' : 'AI'}
                   </div>
-                  <div className="step">
-                    <span className="step-num">3</span>
-                    <span>Ask questions and review the cited sources</span>
+                  <div className="bubble">
+                    {msg.role === 'assistant'
+                      ? <SafeMarkdown content={msg.content} />
+                      : msg.content
+                    }
+                    {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
+                      <SourceList sources={msg.sources} />
+                    )}
                   </div>
                 </div>
-              </div>
+              ))}
 
-              {inputValue.trim() === '' && suggestions.length > 0 && (
-                <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
-                  <div className="suggestions-label">Suggested Questions</div>
-                  <div className="suggestions-row">
-                    {suggestions.map((s, idx) => (
-                      <button 
-                        key={idx} 
-                        className="suggestion-btn" 
-                        onClick={() => setInputValue(s)}
-                      >
-                        {s}
-                      </button>
-                    ))}
+              {/* Loading indicator — reuses existing .thinking / .dots CSS */}
+              {isLoading && (
+                <div className="thinking" aria-live="polite" aria-label="Loading response">
+                  <div className="dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
                   </div>
+                  <span>Thinking…</span>
                 </div>
               )}
-            </>
-          )}
 
-          {/* Message list */}
-          {messages.map(msg => (
-            <div
-              key={msg.id}
-              className={`message${msg.role === 'user' ? ' user' : ''}`}
-            >
-              <div className={`avatar${msg.role === 'user' ? ' user' : ' ai'}`}>
-                {msg.role === 'user' ? 'YOU' : 'AI'}
-              </div>
-              <div className="bubble">
-                {msg.role === 'assistant'
-                  ? <SafeMarkdown content={msg.content} />
-                  : msg.content
-                }
-                {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
-                  <SourceList sources={msg.sources} />
-                )}
-              </div>
+              {/* Error banner */}
+              {error && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  style={{
+                    background: 'rgba(127,29,29,0.25)',
+                    border: '1px solid #7f1d1d',
+                    borderRadius: '10px',
+                    color: '#fca5a5',
+                    padding: '0.75rem 1rem',
+                    fontSize: '0.9rem',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {/* Auto-scroll sentinel — scrollIntoView targets this element */}
+              <div ref={chatEndRef} aria-hidden="true" />
             </div>
-          ))}
 
-          {/* Loading indicator — reuses existing .thinking / .dots CSS */}
-          {isLoading && (
-            <div className="thinking" aria-live="polite" aria-label="Loading response">
-              <div className="dots" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <span>Thinking…</span>
+            {/* INPUT BAR */}
+            <div className="input-bar">
+              <textarea
+                ref={textareaRef}
+                id="chatInput"
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything about your documents..."
+                rows={1}
+                disabled={isLoading}
+                aria-label="Chat input"
+              />
+              <button
+                className="btn-send"
+                id="sendBtn"
+                onClick={handleSend}
+                disabled={!canSend}
+                aria-label="Send message"
+                title="Send message"
+              >
+                <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 19V5"/>
+                  <path d="m5 12 7-7 7 7"/>
+                </svg>
+              </button>
             </div>
-          )}
-
-          {/* Error banner */}
-          {error && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              style={{
-                background: 'rgba(127,29,29,0.25)',
-                border: '1px solid #7f1d1d',
-                borderRadius: '10px',
-                color: '#fca5a5',
-                padding: '0.75rem 1rem',
-                fontSize: '0.9rem',
-                lineHeight: 1.5,
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {/* Auto-scroll sentinel — scrollIntoView targets this element */}
-          <div ref={chatEndRef} aria-hidden="true" />
-        </div>
-
-        {/* INPUT BAR */}
-        <div className="input-bar">
-          <textarea
-            ref={textareaRef}
-            id="chatInput"
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything about your documents..."
-            rows={1}
-            disabled={isLoading}
-            aria-label="Chat input"
+          </>
+        ) : currentView === 'summary' ? (
+          <SummaryView 
+            data={summaryData} 
+            loading={studyLoading} 
+            error={studyError} 
+            onBack={() => setCurrentView('chat')} 
           />
-          <button
-            className="btn-send"
-            id="sendBtn"
-            onClick={handleSend}
-            disabled={!canSend}
-            aria-label="Send message"
-            title="Send message"
-          >
-            <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 19V5"/>
-              <path d="m5 12 7-7 7 7"/>
-            </svg>
-          </button>
-        </div>
+        ) : currentView === 'flashcards' ? (
+          <FlashcardsView 
+            data={flashcardData} 
+            loading={studyLoading} 
+            error={studyError} 
+            onBack={() => setCurrentView('chat')} 
+          />
+        ) : currentView === 'quiz' ? (
+          <QuizView 
+            data={quizData} 
+            loading={studyLoading} 
+            error={studyError} 
+            onBack={() => setCurrentView('chat')} 
+          />
+        ) : null}
       </main>
     </>
   )
