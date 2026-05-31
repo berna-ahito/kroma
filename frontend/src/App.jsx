@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary } from './api/kromaApi.js'
+import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 
@@ -35,6 +35,15 @@ export default function App() {
   const [clearing, setClearing] = useState(false)
   const [clearError, setClearError] = useState(null)
   const [clearMessage, setClearMessage] = useState(null)
+
+  // Suggestions state
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState(null)
+
+  // History state
+  const [savedChats, setSavedChats] = useState([])
+  const [loadedChatId, setLoadedChatId] = useState(null)
 
   const libraryBusy = uploading || processing || Boolean(deletingDoc) || clearing
 
@@ -77,6 +86,123 @@ export default function App() {
   const pageCount  = status?.stats?.total_pages ?? 0
   const chunkCount = status?.stats?.total_chunks ?? 0
   const docList    = status?.docs ?? []
+
+  // --- HISTORY HELPERS ---
+  const getSavedChats = () => {
+    try {
+      const stored = localStorage.getItem('kroma_chat_history')
+      if (stored) return JSON.parse(stored)
+    } catch (err) {}
+    return []
+  }
+
+  const setSavedChatsSafe = (chats) => {
+    try {
+      localStorage.setItem('kroma_chat_history', JSON.stringify(chats))
+      setSavedChats(chats)
+    } catch (err) {}
+  }
+
+  useEffect(() => {
+    setSavedChats(getSavedChats())
+  }, [])
+
+  const saveCurrentChat = (msgs, chatId) => {
+    if (msgs.length === 0) return null
+    let history = getSavedChats()
+    let currentId = chatId
+    if (!currentId) {
+      currentId = genId()
+    }
+    const userMsg = msgs.find(m => m.role === 'user')
+    const title = userMsg ? userMsg.content.slice(0, 50) : 'Untitled chat'
+    
+    const existingIndex = history.findIndex(h => h.id === currentId)
+    const chatEntry = {
+      id: currentId,
+      title,
+      createdAt: existingIndex >= 0 ? history[existingIndex].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: msgs.map(m => {
+        const msgData = { id: m.id, role: m.role, content: m.content }
+        if (m.role === 'assistant') {
+          msgData.sources = m.sources || []
+          msgData.showSources = Boolean(m.showSources)
+        }
+        return msgData
+      })
+    }
+    
+    if (existingIndex >= 0) {
+      history[existingIndex] = chatEntry
+    } else {
+      history.unshift(chatEntry)
+    }
+    
+    if (history.length > 20) history = history.slice(0, 20)
+    setSavedChatsSafe(history)
+    return currentId
+  }
+
+  const loadChat = (entry) => {
+    if (messages.length > 0) {
+      saveCurrentChat(messages, loadedChatId)
+    }
+    setMessages(entry.messages || [])
+    setLoadedChatId(entry.id)
+    setInputValue('')
+    setError(null)
+  }
+
+  const deleteHistoryChat = (id, e) => {
+    if (e) e.stopPropagation()
+    const history = getSavedChats().filter(h => h.id !== id)
+    setSavedChatsSafe(history)
+    if (id === loadedChatId) {
+      setMessages([])
+      setLoadedChatId(null)
+    }
+  }
+
+  const clearHistory = () => {
+    setSavedChatsSafe([])
+  }
+
+  const handleNewChat = () => {
+    if (messages.length > 0) {
+      saveCurrentChat(messages, loadedChatId)
+    }
+    setMessages([])
+    setInputValue('')
+    setError(null)
+    setLoadedChatId(null)
+  }
+
+  // --- SUGGESTIONS LOGIC ---
+  useEffect(() => {
+    if (docList.length > 0 && messages.length === 0 && inputValue.trim() === '' && !isLoading && !statusError) {
+      let isMounted = true
+      setSuggestionsLoading(true)
+      setSuggestionsError(null)
+      generateSuggestions({ selectedDocs })
+        .then(res => {
+          if (isMounted && res.questions) {
+            setSuggestions(res.questions)
+          }
+        })
+        .catch(err => {
+          if (isMounted) {
+            setSuggestionsError(err.message || 'Failed to load suggestions')
+          }
+        })
+        .finally(() => {
+          if (isMounted) setSuggestionsLoading(false)
+        })
+      return () => { isMounted = false }
+    } else {
+      setSuggestions([])
+    }
+  }, [docList.length, messages.length, inputValue, isLoading, statusError, selectedDocs])
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files)
@@ -174,8 +300,9 @@ export default function App() {
     const priorMessages = messages.map(({ role, content }) => ({ role, content }))
 
     const userMsg = { id: genId(), role: 'user', content: trimmed }
+    const messagesWithUser = [...messages, userMsg]
 
-    setMessages(prev => [...prev, userMsg])
+    setMessages(messagesWithUser)
     setInputValue('')
     // Reset textarea height so it returns to single-row after send
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
@@ -192,7 +319,12 @@ export default function App() {
       const sources = data?.sources ?? []
       const showSources = Boolean(data?.show_sources) && sources.length > 0
       const assistantMsg = { id: genId(), role: 'assistant', content: answer, sources, showSources }
-      setMessages(prev => [...prev, assistantMsg])
+      
+      const nextMessages = [...messagesWithUser, assistantMsg]
+      setMessages(nextMessages)
+
+      const savedId = saveCurrentChat(nextMessages, loadedChatId)
+      if (!loadedChatId) setLoadedChatId(savedId)
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
     } finally {
@@ -341,7 +473,7 @@ export default function App() {
           >
             {clearing ? 'Clearing...' : 'Clear all'}
           </button>
-          <button className="btn-secondary">New chat</button>
+          <button className="btn-secondary" onClick={handleNewChat}>New chat</button>
         </div>
         {clearError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
         {clearMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
@@ -398,10 +530,47 @@ export default function App() {
         <hr className="divider" />
         <div className="sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>History</span>
-          <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '0.7rem', cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}>Clear</button>
+          {savedChats.length > 0 && (
+            <button 
+              style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '0.7rem', cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
+              onClick={clearHistory}
+            >
+              Clear
+            </button>
+          )}
         </div>
         <div className="library-list" id="historyList">
-          <span className="empty-lib">No saved chats yet.</span>
+          {savedChats.length === 0 ? (
+            <span className="empty-lib">No saved chats yet.</span>
+          ) : (
+            savedChats.map(chat => (
+              <div 
+                key={chat.id} 
+                className="history-item" 
+                onClick={() => loadChat(chat)}
+                style={{ 
+                  background: chat.id === loadedChatId ? 'var(--surface-2)' : 'var(--bg)',
+                  borderColor: chat.id === loadedChatId ? 'var(--gold-dim)' : 'var(--border)'
+                }}
+              >
+                <div className="history-info">
+                  <div className="history-title">{chat.title}</div>
+                  <div className="history-date">
+                    {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </div>
+                </div>
+                <button 
+                  className="history-delete" 
+                  onClick={(e) => deleteHistoryChat(chat.id, e)}
+                  title="Delete chat"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none">
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </aside>
 
@@ -443,29 +612,48 @@ export default function App() {
 
           {/* Empty state — hidden once messages exist */}
           {messages.length === 0 && !isLoading && (
-            <div className="empty-state" id="emptyState">
-              <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                <path d="M7 12h10"/>
-                <path d="M7 16h6"/>
-              </svg>
-              <h3>Ask your documents anything</h3>
-              <p>No processed documents are available. Upload and process a document first.</p>
-              <div className="steps">
-                <div className="step">
-                  <span className="step-num">1</span>
-                  <span>Upload a supported file from your computer</span>
-                </div>
-                <div className="step">
-                  <span className="step-num">2</span>
-                  <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
-                </div>
-                <div className="step">
-                  <span className="step-num">3</span>
-                  <span>Ask questions and review the cited sources</span>
+            <>
+              <div className="empty-state" id="emptyState">
+                <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  <path d="M7 12h10"/>
+                  <path d="M7 16h6"/>
+                </svg>
+                <h3>Ask your documents anything</h3>
+                <p>No processed documents are available. Upload and process a document first.</p>
+                <div className="steps">
+                  <div className="step">
+                    <span className="step-num">1</span>
+                    <span>Upload a supported file from your computer</span>
+                  </div>
+                  <div className="step">
+                    <span className="step-num">2</span>
+                    <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
+                  </div>
+                  <div className="step">
+                    <span className="step-num">3</span>
+                    <span>Ask questions and review the cited sources</span>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              {inputValue.trim() === '' && suggestions.length > 0 && (
+                <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
+                  <div className="suggestions-label">Suggested Questions</div>
+                  <div className="suggestions-row">
+                    {suggestions.map((s, idx) => (
+                      <button 
+                        key={idx} 
+                        className="suggestion-btn" 
+                        onClick={() => setInputValue(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Message list */}
@@ -555,4 +743,3 @@ export default function App() {
     </>
   )
 }
-
