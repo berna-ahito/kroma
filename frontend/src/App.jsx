@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat, getStatus, uploadDocument, processDocuments } from './api/kromaApi.js'
+import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 
@@ -27,6 +27,16 @@ export default function App() {
   const [processing, setProcessing] = useState(false)
   const [processError, setProcessError] = useState(null)
   const [processMessage, setProcessMessage] = useState(null)
+
+  const [selectedDocs, setSelectedDocs] = useState([])
+  const [deletingDoc, setDeletingDoc] = useState(null)
+  const [deleteError, setDeleteError] = useState(null)
+  const [deleteMessage, setDeleteMessage] = useState(null)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState(null)
+  const [clearMessage, setClearMessage] = useState(null)
+
+  const libraryBusy = uploading || processing || Boolean(deletingDoc) || clearing
 
   const chatEndRef   = useRef(null)
   const textareaRef  = useRef(null)
@@ -113,6 +123,48 @@ export default function App() {
     }
   }
 
+  const handleDelete = async (filename) => {
+    if (!window.confirm(`Are you sure you want to delete ${filename}?`)) return
+    
+    setDeletingDoc(filename)
+    setDeleteError(null)
+    setDeleteMessage(null)
+    setClearError(null)
+    setClearMessage(null)
+    
+    try {
+      await deleteDocument(filename)
+      setSelectedDocs(prev => prev.filter(f => f !== filename))
+      setDeleteMessage(`Deleted ${filename}.`)
+      await fetchStatus()
+    } catch (err) {
+      setDeleteError(err.message || `Failed to delete ${filename}`)
+    } finally {
+      setDeletingDoc(null)
+    }
+  }
+
+  const handleClear = async () => {
+    if (!window.confirm('Are you sure you want to clear the entire library?')) return
+    
+    setClearing(true)
+    setClearError(null)
+    setClearMessage(null)
+    setDeleteError(null)
+    setDeleteMessage(null)
+    
+    try {
+      await clearLibrary()
+      setSelectedDocs([])
+      setClearMessage('Library cleared.')
+      await fetchStatus()
+    } catch (err) {
+      setClearError(err.message || 'Failed to clear library')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   async function handleSend() {
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
@@ -134,7 +186,7 @@ export default function App() {
       const data = await sendChat({
         question: trimmed,
         history: priorMessages,
-        selectedDocs: [],
+        selectedDocs: selectedDocs,
       })
       const answer = data?.answer ?? 'No response received.'
       const sources = data?.sources ?? []
@@ -248,19 +300,51 @@ export default function App() {
             <span className="empty-lib">No documents yet.</span>
           ) : (
             docList.map(filename => (
-              <div key={filename} style={{ padding: '0.25rem 0', fontSize: '0.85rem', color: 'var(--text-2)', wordBreak: 'break-all' }}>
-                {filename}
+              <div key={filename} style={{ padding: '0.25rem 0', fontSize: '0.85rem', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', wordBreak: 'break-all' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedDocs.includes(filename)}
+                    onChange={() => {
+                      setSelectedDocs(prev => 
+                        prev.includes(filename) 
+                          ? prev.filter(f => f !== filename) 
+                          : [...prev, filename]
+                      )
+                    }}
+                    disabled={libraryBusy}
+                  />
+                  {filename}
+                </label>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem' }}
+                  onClick={() => handleDelete(filename)}
+                  disabled={libraryBusy}
+                >
+                  {deletingDoc === filename ? 'Deleting...' : 'Delete'}
+                </button>
               </div>
             ))
           )}
         </div>
+        {deleteError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteError}</div>}
+        {deleteMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteMessage}</div>}
 
         <hr className="divider" />
 
         <div className="btn-row">
-          <button className="btn-secondary">Clear all</button>
+          <button 
+            className="btn-secondary"
+            onClick={handleClear}
+            disabled={libraryBusy || docList.length === 0}
+          >
+            {clearing ? 'Clearing...' : 'Clear all'}
+          </button>
           <button className="btn-secondary">New chat</button>
         </div>
+        {clearError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
+        {clearMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
 
         <hr className="divider" />
 
