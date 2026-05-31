@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { sendChat } from './api/kromaApi.js'
+import SourceList from './components/chat/SourceList.jsx'
 
 // Stable unique id for React keys — no external lib needed
 function genId() {
@@ -36,7 +37,9 @@ export default function App() {
         selectedDocs: [],
       })
       const answer = data?.answer ?? 'No response received.'
-      const assistantMsg = { id: genId(), role: 'assistant', content: answer }
+      const sources = data?.sources ?? []
+      const showSources = Boolean(data?.show_sources) && sources.length > 0
+      const assistantMsg = { id: genId(), role: 'assistant', content: answer, sources, showSources }
       setMessages(prev => [...prev, assistantMsg])
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -262,6 +265,9 @@ export default function App() {
               </div>
               <div className="bubble">
                 {msg.content}
+                {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
+                  <SourceList sources={msg.sources} />
+                )}
               </div>
             </div>
           ))}
