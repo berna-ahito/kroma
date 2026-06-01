@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from ingest import (
@@ -681,17 +681,16 @@ def react_index_response():
 
 @app.get("/app")
 def app_page():
-    return react_index_response()
+    return RedirectResponse(url="/dashboard")
 
 @app.get("/next")
 def next_page():
+    return RedirectResponse(url="/dashboard")
+
+@app.get("/dashboard")
+def dashboard_page():
     return react_index_response()
 
-@app.get("/legacy-app")
-def legacy_app_page():
-    return FileResponse("static/index.html")
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 assets_dir = Path("frontend/dist/assets")
 if assets_dir.exists():
