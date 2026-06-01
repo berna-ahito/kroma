@@ -62,28 +62,32 @@ export default function QuizView({ data, loading, error, onBack }) {
   }, [submitted, answers, questions])
 
   return (
-    <div className="chat-container">
-      <div className="chat-history">
-        <button onClick={onBack} className="btn" style={{ marginBottom: '1rem' }}>
+    <div className="tool-shell">
+      <div className="tool-header">
+        <div className="tool-heading">
+          <h2>Quiz</h2>
+          <p className="tool-subtitle">Answer each question, then submit to reveal explanations and sources.</p>
+        </div>
+        <button onClick={onBack} className="tool-back-button">
           Back to chat
         </button>
+      </div>
+
+      <div className="tool-body">
+        {submitted && (
+          <div className="tool-card quiz-score-card">
+            <span className="tool-kicker">Score</span>
+            <strong>{score} / {questions.length}</strong>
+          </div>
+        )}
+
+        {loading && <div className="tool-state">Loading quiz...</div>}
+        {error && <div className="tool-error">{error.message || 'Error generating quiz'}</div>}
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>Quiz</h2>
-          {submitted && (
-            <div style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
-              Score: {score} / {questions.length}
-            </div>
-          )}
-        </div>
-        
-        {loading && <div style={{ opacity: 0.7, margin: '1rem 0' }}>Loading quiz...</div>}
-        {error && <div style={{ color: 'red', margin: '1rem 0' }}>{error.message || 'Error generating quiz'}</div>}
-        
-        {!loading && !error && !hasQuestions && <div style={{ marginTop: '1rem' }}>No questions available.</div>}
+        {!loading && !error && !hasQuestions && <div className="tool-state">No questions available.</div>}
         
         {!loading && !error && hasQuestions && (
-          <div style={{ marginTop: '1.5rem' }}>
+          <div className="quiz-tool-list">
             {questions.map((q, qIndex) => {
               const selectedChoice = answers[qIndex]
               const isCorrect = submitted && normalizeLetter(selectedChoice) === normalizeLetter(q.answer)
@@ -92,54 +96,26 @@ export default function QuizView({ data, loading, error, onBack }) {
               return (
                 <div 
                   key={qIndex} 
-                  style={{ 
-                    marginBottom: '2rem', 
-                    padding: '1.5rem',
-                    border: submitted
-                      ? (isCorrect ? '1px solid #16a34a' : '1px solid #dc2626')
-                      : '1px solid var(--border)',
-                    borderRadius: '8px',
-                    backgroundColor: submitted ? (isCorrect ? '#052e16' : '#450a0a') : 'var(--surface)',
-                    color: submitted ? (isCorrect ? '#86efac' : '#fca5a5') : 'var(--text-2)'
-                  }}
+                  className={`tool-card quiz-question-card${submitted ? (isCorrect ? ' is-correct' : ' is-incorrect') : ''}`}
                 >
-                  <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>
-                    {qIndex + 1}. <SafeMarkdown content={q.question} inline />
-                  </h3>
+                  <div className="tool-kicker">Question {qIndex + 1}</div>
+                  <h3 className="quiz-question-title"><SafeMarkdown content={q.question} inline /></h3>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div className="tool-choice-list">
                     {q.choices.map((choice, cIndex) => {
                       const isSelected = selectedChoice === choice
                       const isActualAnswer = submitted && normalizeLetter(choice) === normalizeLetter(q.answer)
-                      
-                      let choiceStyle = {
-                        padding: '0.75rem',
-                        border: '1px solid var(--border)',
-                        borderRadius: '4px',
-                        cursor: submitted ? 'default' : 'pointer',
-                        backgroundColor: isSelected ? '#1c1200' : 'var(--bg)',
-                        color: isSelected ? 'var(--cream)' : 'var(--text-2)',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.5rem'
-                      }
-                      
-                      if (submitted) {
-                        if (isActualAnswer) {
-                          choiceStyle.backgroundColor = '#052e16'
-                          choiceStyle.borderColor = '#16a34a'
-                          choiceStyle.color = '#86efac'
-                        } else if (isSelected && !isActualAnswer) {
-                          choiceStyle.backgroundColor = '#450a0a'
-                          choiceStyle.borderColor = '#dc2626'
-                          choiceStyle.color = '#fca5a5'
-                        }
-                      }
+                      const choiceClass = [
+                        'tool-choice',
+                        isSelected ? 'tool-choice--selected' : '',
+                        isActualAnswer ? 'tool-choice--correct' : '',
+                        submitted && isSelected && !isActualAnswer ? 'tool-choice--incorrect' : '',
+                      ].filter(Boolean).join(' ')
                       
                       return (
                         <div 
                           key={cIndex} 
-                          style={choiceStyle}
+                          className={choiceClass}
                           onClick={() => handleSelect(qIndex, cIndex, choice)}
                         >
                           <input 
@@ -147,9 +123,8 @@ export default function QuizView({ data, loading, error, onBack }) {
                             name={`q-${qIndex}`}
                             checked={isSelected}
                             readOnly
-                            style={{ marginTop: '0.2rem' }}
                           />
-                          <div style={{ flex: 1 }}>
+                          <div className="tool-choice-text">
                             <SafeMarkdown content={choice} inline />
                           </div>
                         </div>
@@ -158,14 +133,14 @@ export default function QuizView({ data, loading, error, onBack }) {
                   </div>
                   
                   {submitted && (
-                    <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: isCorrect ? '#86efac' : '#fca5a5' }}>
-                        {isCorrect ? '✓ Correct' : '✗ Incorrect'} 
+                    <div className="quiz-feedback">
+                      <div className={`tool-pill${isCorrect ? ' tool-success' : ' tool-error-pill'}`}>
+                        {isCorrect ? 'Correct' : 'Incorrect'}
                         {!isCorrect && ` (Answer: ${normalizeLetter(q.answer)})`}
                       </div>
                       
                       {q.explanation && (
-                        <div style={{ marginBottom: '1rem' }}>
+                        <div className="tool-markdown">
                           <SafeMarkdown content={q.explanation} />
                         </div>
                       )}
@@ -182,15 +157,14 @@ export default function QuizView({ data, loading, error, onBack }) {
             })}
             
             {!submitted && (
-              <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <button 
-                  className="btn" 
+              <div className="tool-actions quiz-submit-row">
+                <button
+                  className="btn-primary"
                   onClick={handleSubmit}
-                  style={{ fontWeight: 'bold', padding: '0.75rem 1.5rem' }}
                 >
                   Submit Quiz
                 </button>
-                {submitError && <span style={{ color: 'red' }}>{submitError}</span>}
+                {submitError && <span className="tool-inline-error">{submitError}</span>}
               </div>
             )}
           </div>

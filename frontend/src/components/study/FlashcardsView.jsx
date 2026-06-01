@@ -39,49 +39,43 @@ export default function FlashcardsView({ data, loading, error, onBack }) {
   }
 
   return (
-    <div className="chat-container">
-      <div className="chat-history">
-        <button onClick={onBack} className="btn" style={{ marginBottom: '1rem' }}>
+    <div className="tool-shell">
+      <div className="tool-header">
+        <div className="tool-heading">
+          <h2>Flashcards</h2>
+          <p className="tool-subtitle">Review question and answer cards from the selected documents.</p>
+        </div>
+        <button onClick={onBack} className="tool-back-button">
           Back to chat
         </button>
+      </div>
+
+      <div className="tool-body">
+        {loading && <div className="tool-state">Loading flashcards...</div>}
+        {error && <div className="tool-error">{error.message || 'Error generating flashcards'}</div>}
         
-        <h2>Flashcards</h2>
-        
-        {loading && <div style={{ opacity: 0.7, margin: '1rem 0' }}>Loading flashcards...</div>}
-        {error && <div style={{ color: 'red', margin: '1rem 0' }}>{error.message || 'Error generating flashcards'}</div>}
-        
-        {!loading && !error && !hasCards && <div>No flashcards available.</div>}
+        {!loading && !error && !hasCards && <div className="tool-state">No flashcards available.</div>}
         
         {!loading && !error && hasCards && currentCard && (
-          <div style={{ marginTop: '1rem', maxWidth: '600px', margin: '1rem auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: '1rem', opacity: 0.8 }}>
+          <div className="flashcard-stage">
+            <div className="tool-progress">
               Card {currentIndex + 1} of {flashcards.length}
             </div>
             
             <div 
-              style={{
-                padding: '2rem',
-                border: flipped ? '1px solid var(--gold-soft)' : '1px solid var(--border)',
-                borderRadius: '8px',
-                minHeight: '200px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center',
-                backgroundColor: flipped ? '#1c1200' : 'var(--surface)',
-                color: flipped ? 'var(--cream)' : 'var(--text-2)'
-              }}
+              className={`study-flashcard-card${flipped ? ' is-flipped' : ''}`}
             >
               {!flipped ? (
-                <div>
-                  <h3 style={{ margin: 0 }}>
+                <div className="study-flashcard-face">
+                  <span className="tool-kicker">Question</span>
+                  <h3>
                     <SafeMarkdown content={currentCard.question} inline />
                   </h3>
                 </div>
               ) : (
-                <div style={{ width: '100%', textAlign: 'left' }}>
-                  <div style={{ marginBottom: '1rem', fontWeight: 'bold' }}>
+                <div className="study-flashcard-face study-flashcard-answer">
+                  <span className="tool-kicker">Answer</span>
+                  <div className="study-flashcard-answer-text">
                     <SafeMarkdown content={currentCard.answer} inline />
                   </div>
                   {currentCard.source_ids && currentCard.source_ids.length > 0 && (
@@ -95,26 +89,25 @@ export default function FlashcardsView({ data, loading, error, onBack }) {
               )}
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', alignItems: 'center' }}>
-              <button 
-                className="btn" 
-                onClick={handlePrev} 
+            <div className="tool-actions flashcard-actions">
+              <button
+                className="btn-secondary"
+                onClick={handlePrev}
                 disabled={currentIndex === 0}
               >
                 Previous
               </button>
               
-              <button 
-                className="btn" 
-                style={{ fontWeight: 'bold' }}
+              <button
+                className="btn-primary"
                 onClick={() => setFlipped(!flipped)}
               >
                 {flipped ? 'Show Question' : 'Flip'}
               </button>
               
-              <button 
-                className="btn" 
-                onClick={handleNext} 
+              <button
+                className="btn-secondary"
+                onClick={handleNext}
                 disabled={currentIndex === flashcards.length - 1}
               >
                 Next

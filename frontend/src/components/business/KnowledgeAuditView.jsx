@@ -1,5 +1,4 @@
 import React from 'react'
-import SafeMarkdown from '../chat/SafeMarkdown.jsx'
 import BusinessSources from './BusinessSources.jsx'
 
 export default function KnowledgeAuditView({ onBack, onRun, data, loading, error }) {
@@ -7,21 +6,23 @@ export default function KnowledgeAuditView({ onBack, onRun, data, loading, error
   const sources = data?.sources || []
 
   return (
-    <div className="study-view">
-      <div className="study-header">
-        <button className="btn-secondary" onClick={onBack} disabled={loading}>
-          ← Back to chat
+    <div className="tool-shell">
+      <div className="tool-header">
+        <div className="tool-heading">
+          <h2>Knowledge Audit</h2>
+          <p className="tool-subtitle">Assess coverage, missing knowledge, risks, and automation readiness.</p>
+        </div>
+        <button className="tool-back-button" onClick={onBack} disabled={loading}>
+          Back to chat
         </button>
-        <h2 className="study-title">Knowledge Audit</h2>
-        <div style={{ flex: 1 }}></div>
       </div>
 
-      <div className="study-content" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1rem', overflowY: 'auto' }}>
+      <div className="tool-body">
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-2)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <div className="tool-card audit-intro">
           <div>
-            <h3 style={{ margin: '0 0 0.5rem 0' }}>Evaluate Knowledge Base</h3>
-            <p style={{ margin: 0, color: 'var(--text-2)', fontSize: '0.9rem' }}>Run an audit to find gaps, assess readiness, and uncover risk areas in the selected documents.</p>
+            <h3 className="tool-section-title">Evaluate Knowledge Base</h3>
+            <p className="tool-subtitle">Run an audit against the selected documents. No selection means all documents.</p>
           </div>
           <button className="btn-primary" onClick={onRun} disabled={loading}>
             {loading ? 'Running Audit...' : 'Run Audit'}
@@ -29,95 +30,93 @@ export default function KnowledgeAuditView({ onBack, onRun, data, loading, error
         </div>
 
         {error && (
-          <div style={{ padding: '1rem', background: 'rgba(127,29,29,0.25)', border: '1px solid #7f1d1d', borderRadius: '8px', color: '#fca5a5' }}>
+          <div className="tool-error">
             {error.message || 'An error occurred during the audit.'}
           </div>
         )}
 
+        {loading && <div className="tool-state">Running audit...</div>}
+
         {result && !loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="tool-grid">
             
             {result.readiness_verdict && (
-              <div style={{ padding: '1.5rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem' }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Readiness Verdict:</span>
-                  <span style={{ 
-                    fontSize: '1.2rem', 
-                    fontWeight: 'bold', 
-                    color: result.readiness_verdict.level === 'High' ? '#34d399' : result.readiness_verdict.level === 'Medium' ? '#fbbf24' : '#f87171' 
-                  }}>
+              <section className="tool-card readiness-card">
+                <span className="tool-kicker">Readiness Verdict</span>
+                <strong className={`readiness-badge readiness-${String(result.readiness_verdict.level || 'unknown').toLowerCase()}`}>
                     {result.readiness_verdict.level || 'Unknown'}
-                  </span>
-                </div>
+                </strong>
                 {result.readiness_verdict.reasons?.length > 0 && (
-                  <ul style={{ margin: 0, paddingLeft: '1.5rem', color: 'var(--text-2)' }}>
+                  <ul className="tool-list">
                     {result.readiness_verdict.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
                   </ul>
                 )}
-              </div>
+              </section>
             )}
 
             {result.coverage_summary?.length > 0 && (
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ background: 'var(--surface-3)', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 'bold' }}>Coverage Summary</div>
-                <ul style={{ padding: '1rem 1rem 1rem 2.5rem', margin: 0 }}>
+              <section className="tool-card">
+                <h3 className="tool-section-title">Coverage Summary</h3>
+                <ul className="tool-list">
                   {result.coverage_summary.map((cov, i) => (
-                    <li key={i} style={{ marginBottom: '0.5rem' }}>{cov}</li>
+                    <li key={i}>{cov}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {result.missing_knowledge?.length > 0 && (
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ background: 'var(--surface-3)', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 'bold' }}>Missing Knowledge</div>
-                <ul style={{ padding: '1rem 1rem 1rem 2.5rem', margin: 0 }}>
+              <section className="tool-card">
+                <h3 className="tool-section-title">Missing Knowledge</h3>
+                <ul className="tool-list">
                   {result.missing_knowledge.map((miss, i) => (
-                    <li key={i} style={{ marginBottom: '0.5rem' }}>{miss}</li>
+                    <li key={i}>{miss}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {result.risk_areas?.length > 0 && (
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ background: 'var(--surface-3)', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 'bold' }}>Risk Areas</div>
-                <ul style={{ padding: '1rem 1rem 1rem 2.5rem', margin: 0 }}>
+              <section className="tool-card">
+                <h3 className="tool-section-title">Risk Areas</h3>
+                <ul className="tool-list">
                   {result.risk_areas.map((risk, i) => (
-                    <li key={i} style={{ marginBottom: '0.5rem' }}>{risk}</li>
+                    <li key={i}>{risk}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {result.automation_readiness?.length > 0 && (
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ background: 'var(--surface-3)', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 'bold' }}>Automation Readiness</div>
-                <div style={{ padding: '1rem' }}>
+              <section className="tool-card">
+                <h3 className="tool-section-title">Automation Readiness</h3>
+                <div className="tool-nested-list">
                   {result.automation_readiness.map((ar, i) => (
-                    <div key={i} style={{ marginBottom: i < result.automation_readiness.length - 1 ? '1rem' : 0 }}>
-                      <strong style={{ display: 'block', marginBottom: '0.25rem' }}>{ar.category}</strong>
-                      <ul style={{ margin: 0, paddingLeft: '1.5rem', color: 'var(--text-2)' }}>
+                    <div key={i} className="tool-nested-group">
+                      <strong>{ar.category}</strong>
+                      <ul className="tool-list">
                         {ar.items?.map((item, j) => <li key={j}>{item}</li>)}
                       </ul>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
             {result.suggested_next_documents?.length > 0 && (
-              <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ background: 'var(--surface-3)', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 'bold' }}>Suggested Next Documents</div>
-                <ul style={{ padding: '1rem 1rem 1rem 2.5rem', margin: 0 }}>
+              <section className="tool-card">
+                <h3 className="tool-section-title">Suggested Next Documents</h3>
+                <ul className="tool-list">
                   {result.suggested_next_documents.map((doc, i) => (
-                    <li key={i} style={{ marginBottom: '0.5rem' }}>{doc}</li>
+                    <li key={i}>{doc}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
-            <BusinessSources sourceIds={result.sources_used} sources={sources} />
+            <div className="tool-card">
+              <BusinessSources sourceIds={result.sources_used} sources={sources} />
+            </div>
 
           </div>
         )}

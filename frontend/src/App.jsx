@@ -18,6 +18,24 @@ function genId() {
 const MAX_SELECTED_DOCS = 25
 const EMPTY_DOC_LIST = []
 
+function getUploadedFilenames(response, fallbackName) {
+  const candidates = [
+    response?.filename,
+    response?.file_name,
+    response?.name,
+    response?.filenames,
+    response?.files,
+    response?.docs,
+    response?.documents,
+  ].flat()
+
+  const names = candidates
+    .map(item => (typeof item === 'string' ? item : item?.filename || item?.file_name || item?.name))
+    .filter(Boolean)
+
+  return names.length ? names : [fallbackName]
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState('chat')
   const [studyLoading, setStudyLoading] = useState(false)
@@ -210,6 +228,7 @@ export default function App() {
     setInputValue('')
     setError(null)
     setLoadedChatId(null)
+    setCurrentView('chat')
   }
 
   // --- SUGGESTIONS LOGIC ---
@@ -262,10 +281,12 @@ export default function App() {
     setProcessError(null)
 
     let hasError = false
+    const uploadedFilenames = []
     try {
       for (const file of files) {
         try {
-          await uploadDocument(file)
+          const response = await uploadDocument(file)
+          uploadedFilenames.push(...getUploadedFilenames(response, file.name))
         } catch (err) {
           setUploadError(err.message || `Failed to upload ${file.name}`)
           hasError = true
@@ -275,6 +296,7 @@ export default function App() {
       if (!hasError) {
         setUploadMessage(`Uploaded ${files.length} file(s).`)
         await fetchStatus()
+        setSelectedDocs(prev => Array.from(new Set([...prev, ...uploadedFilenames])))
       }
     } finally {
       setUploading(false)
@@ -627,7 +649,7 @@ export default function App() {
             onClick={handleClear}
             disabled={libraryBusy || docList.length === 0}
           >
-            {clearing ? 'Clearing...' : 'Clear all'}
+            {clearing ? 'Clearing...' : 'Clear library'}
           </button>
           <button className="btn-secondary" onClick={handleNewChat}>New chat</button>
         </div>

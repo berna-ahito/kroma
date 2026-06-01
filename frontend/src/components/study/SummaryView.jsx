@@ -12,41 +12,47 @@ export default function SummaryView({ data, loading, error, onBack }) {
   }, [data])
 
   return (
-    <div className="chat-container">
-      <div className="chat-history">
-        <button onClick={onBack} className="btn" style={{ marginBottom: '1rem' }}>
+    <div className="tool-shell">
+      <div className="tool-header">
+        <div className="tool-heading">
+          <h2>Document Summary</h2>
+          <p className="tool-subtitle">A source-grounded overview of the selected documents.</p>
+        </div>
+        <button onClick={onBack} className="tool-back-button">
           Back to chat
         </button>
-        
-        <h2>Document Summary</h2>
-        
-        {loading && <div style={{ opacity: 0.7, margin: '1rem 0' }}>Loading summary...</div>}
-        {error && <div style={{ color: 'red', margin: '1rem 0' }}>{error.message || 'Error generating summary'}</div>}
+      </div>
+
+      <div className="tool-body">
+        {loading && <div className="tool-state">Loading summary...</div>}
+        {error && <div className="tool-error">{error.message || 'Error generating summary'}</div>}
         
         {!loading && !error && data?.summary?.sections && (
-          <div className="summary-content">
-            {data.summary.sections.length === 0 && <div>No summary available.</div>}
+          <div className="tool-grid">
+            {data.summary.sections.length === 0 && <div className="tool-state">No summary available.</div>}
             {data.summary.sections.map((section, idx) => (
-              <div key={idx} style={{ marginBottom: '2rem' }}>
-                <h3 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>{section.heading}</h3>
+              <section key={idx} className="tool-card summary-section">
+                <h3 className="tool-section-title">{section.heading}</h3>
                 
                 {section.text && (
-                  <div style={{ marginBottom: '0.5rem' }}>
+                  <div className="tool-markdown">
                     <SafeMarkdown content={section.text} />
                   </div>
                 )}
                 
                 {section.source_ids && section.source_ids.length > 0 && (
-                  <StudySources sourceIds={section.source_ids} sourceMap={sourceMap} showUnsourced={false} />
+                  <div className="tool-sources-compact">
+                    <StudySources sourceIds={section.source_ids} sourceMap={sourceMap} showUnsourced={false} />
+                  </div>
                 )}
                 
                 {section.bullets && section.bullets.length > 0 && (
-                  <ul style={{ paddingLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  <ul className="tool-list">
                     {section.bullets.map((bullet, bIdx) => (
-                      <li key={bIdx} style={{ marginBottom: '0.5rem' }}>
+                      <li key={bIdx}>
                         <SafeMarkdown content={bullet.text} inline />
                         {bullet.source_ids && bullet.source_ids.length > 0 && (
-                          <div style={{ marginTop: '0.25rem' }}>
+                          <div className="tool-sources-compact">
                             <StudySources sourceIds={bullet.source_ids} sourceMap={sourceMap} showUnsourced={false} />
                           </div>
                         )}
@@ -54,7 +60,7 @@ export default function SummaryView({ data, loading, error, onBack }) {
                     ))}
                   </ul>
                 )}
-              </div>
+              </section>
             ))}
           </div>
         )}
