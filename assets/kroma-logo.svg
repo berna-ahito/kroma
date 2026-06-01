@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="156" viewBox="140 55 400 120" role="img" aria-labelledby="title desc">
   <title id="title">Kroma</title>
   <desc id="desc">Kroma logo with a dark document mark, gold K symbol, and ASK. LEARN. KNOW. tagline.</desc>
-  <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" stroke-width="2"/>
-  <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" stroke-width="1"/>
-  <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" stroke-width="1"/>
-  <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
-  <path d="M195 109 L209 94" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
-  <path d="M195 109 L211 126" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
-  <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
-  <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-  <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
-  <text x="262" y="122" font-family="Outfit, Inter, Arial, sans-serif" font-size="58" font-weight="800" fill="#1c1917">Kroma</text>
-  <circle cx="270" cy="72" r="5" fill="#eab308"/>
-  <text x="265" y="152" font-family="'DM Mono', Consolas, monospace" font-size="13" font-weight="500" fill="#a16207" letter-spacing="4">ASK. LEARN. KNOW.</text>
+  <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#facc15" stroke-width="2"/>
+  <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#57534e" stroke-width="1"/>
+  <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#57534e" stroke-width="1"/>
+  <rect x="188" y="92" width="7" height="34" rx="2" fill="#facc15"/>
+  <path d="M195 109 L209 94" stroke="#facc15" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M195 109 L211 126" stroke="#facc15" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <line x1="188" y1="132" x2="205" y2="132" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+  <line x1="188" y1="137" x2="217" y2="137" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="188" y1="142" x2="211" y2="142" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <text x="262" y="122" font-family="Outfit, Inter, Arial, sans-serif" font-size="58" font-weight="800" fill="#fbbf24" stroke="#78350f" stroke-width="1.2" paint-order="stroke">Kroma</text>
+  <circle cx="270" cy="72" r="5" fill="#facc15"/>
+  <text x="265" y="152" font-family="'DM Mono', Consolas, monospace" font-size="13" font-weight="500" fill="#facc15" stroke="#78350f" stroke-width="0.45" paint-order="stroke" letter-spacing="4">ASK. LEARN. KNOW.</text>
 </svg>
