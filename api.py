@@ -598,7 +598,11 @@ def suggest(req: SuggestRequest, request: Request):
     _require_demo_key(request)
     _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
-    context, _ = retrieve_chunks("main topics key concepts overview summary", n_results=10, selected_docs=selected_docs)
+    context, _ = retrieve_chunks(
+        "main topics key concepts overview summary required skills qualifications tools frameworks bonus proposal interview rate duration job type location candidate fit",
+        n_results=10,
+        selected_docs=selected_docs,
+    )
     if not context:
         raise HTTPException(400, "No content to generate suggestions from.")
     questions = generate_suggestions(context)

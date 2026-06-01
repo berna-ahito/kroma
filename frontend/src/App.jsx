@@ -1,8 +1,18 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz, runKnowledgeCopilot, runKnowledgeAudit } from './api/kromaApi.js'
 import { setDemoKey } from './api/demoKey.js'
-import SourceList from './components/chat/SourceList.jsx'
-import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
+import MetricsBar from './components/chat/MetricsBar.jsx'
+import ExportButton from './components/chat/ExportButton.jsx'
+import EmptyChatState from './components/chat/EmptyChatState.jsx'
+import SuggestionsList from './components/chat/SuggestionsList.jsx'
+import ChatMessages from './components/chat/ChatMessages.jsx'
+import ChatInput from './components/chat/ChatInput.jsx'
+import KromaLogo from './components/layout/KromaLogo.jsx'
+import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
+import UploadPanel from './components/library/UploadPanel.jsx'
+import LibraryList from './components/library/LibraryList.jsx'
+import ToolButtons from './components/library/ToolButtons.jsx'
+import HistoryList from './components/history/HistoryList.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
 import FlashcardsView from './components/study/FlashcardsView.jsx'
 import QuizView from './components/study/QuizView.jsx'
@@ -404,6 +414,14 @@ export default function App() {
     }
   }
 
+  const handleToggleDoc = (filename) => {
+    setSelectedDocs(prev =>
+      prev.includes(filename)
+        ? prev.filter(f => f !== filename)
+        : [...prev, filename]
+    )
+  }
+
   const handleGenerateSummary = async () => {
     setCurrentView('summary')
     setStudyLoading(true)
@@ -513,14 +531,6 @@ export default function App() {
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-    // Shift+Enter: browser inserts newline — no code needed
-  }
-
   function handleExport() {
     if (messages.length === 0) {
       setError('No chat to export.')
@@ -560,275 +570,77 @@ export default function App() {
     }
   }
 
-  const canSend = inputValue.trim() !== '' && !isLoading
-
   return (
     <>
       {/* SIDEBAR */}
       <aside className="sidebar">
-        <a href="/" className="logo" style={{ textDecoration: 'none', padding: '0.25rem 0' }}>
-          <svg width="100%" height="80" viewBox="140 55 400 120" role="img">
-            <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" strokeWidth="2"/>
-            <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" strokeWidth="1"/>
-            <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" strokeWidth="1"/>
-            <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
-            <path d="M195 109 L209 94" stroke="#eab308" strokeWidth="7" strokeLinecap="round" fill="none"/>
-            <path d="M195 109 L211 126" stroke="#eab308" strokeWidth="7" strokeLinecap="round" fill="none"/>
-            <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.8"/>
-            <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.5"/>
-            <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.3"/>
-            <text x="262" y="122" fontFamily="'Outfit', sans-serif" fontSize="58" fontWeight="800" fill="#fafaf9" letterSpacing="-2">Kroma</text>
-            <circle cx="270" cy="72" r="5" fill="#eab308"/>
-            <text x="265" y="152" fontFamily="'DM Mono', monospace" fontSize="13" fontWeight="500" fill="#eab308" letterSpacing="4">ASK. LEARN. KNOW.</text>
-          </svg>
-        </a>
+        <KromaLogo />
 
-        <div className="sidebar-label">Demo access</div>
-        <input
-          id="demoKeyInput"
-          type="password"
-          placeholder="Demo key if required"
-          autoComplete="off"
-          value={demoKeyInput}
-          onChange={event => {
-            setDemoKeyInput(event.target.value)
+        <DemoKeyPanel
+          demoKeyInput={demoKeyInput}
+          setDemoKeyInput={value => {
+            setDemoKeyInput(value)
             setDemoKeyMessage(null)
           }}
-          onKeyDown={event => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              applyDemoKey()
-            }
-          }}
-          style={{
-            width: '100%',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            color: 'var(--text)',
-            padding: '0.65rem 0.75rem',
-            fontFamily: "'Outfit',sans-serif",
-            fontSize: '0.9rem',
-            outline: 'none'
-          }}
+          demoKeyMessage={demoKeyMessage}
+          onApplyDemoKey={applyDemoKey}
+          onClearDemoKey={clearDemoKey}
         />
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={applyDemoKey}
-            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={clearDemoKey}
-            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
-          >
-            Clear
-          </button>
-        </div>
-        {demoKeyMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{demoKeyMessage}</div>}
 
         <hr className="divider" />
 
-        <div className="sidebar-label">Upload</div>
-        <label className="upload-area" id="uploadArea">
-          <input 
-            type="file" 
-            id="fileInput" 
-            accept=".pdf,.txt,.md,.markdown" 
-            multiple 
-            style={{ display: 'none' }} 
-            onChange={handleUpload}
-            disabled={uploading || processing} 
-          />
-          <svg className="upload-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
-            <path d="M14 2v5h5"/>
-            <path d="M9 13h6"/>
-            <path d="M9 17h4"/>
-          </svg>
-          <span className="upload-title">{uploading ? 'Uploading...' : 'Click or drag to upload'}</span>
-          <span className="upload-hint">{uploading ? 'Please wait...' : 'PDF, TXT, Markdown · 25MB max'}</span>
-        </label>
-        {uploadError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadError}</div>}
-        {uploadMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadMessage}</div>}
+        <UploadPanel
+          onUpload={handleUpload}
+          onProcess={handleProcess}
+          uploading={uploading}
+          processing={processing}
+          uploadError={uploadError}
+          uploadMessage={uploadMessage}
+          processError={processError}
+          processMessage={processMessage}
+        />
 
-        <button 
-          className="btn-primary" 
-          id="processBtn" 
-          onClick={handleProcess}
-          disabled={uploading || processing}
-          style={{ marginTop: '0.75rem' }}
+        <hr className="divider" />
+
+        <LibraryList
+          statusLoading={statusLoading}
+          statusError={statusError}
+          docList={docList}
+          selectedDocs={selectedDocs}
+          onToggleDoc={handleToggleDoc}
+          onDeleteDoc={handleDelete}
+          deletingDoc={deletingDoc}
+          libraryBusy={libraryBusy}
+          deleteError={deleteError}
+          deleteMessage={deleteMessage}
+          clearError={clearError}
+          clearMessage={clearMessage}
+          onClearLibrary={handleClear}
+          clearing={clearing}
         >
-          {processing ? 'Processing...' : 'Process Documents'}
-        </button>
-        {processError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processError}</div>}
-        {processMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processMessage}</div>}
-
-        <hr className="divider" />
-
-        <div className="sidebar-label">Library</div>
-        <div className="library-list" id="libraryList">
-          {statusLoading ? (
-            <span className="empty-lib">Loading…</span>
-          ) : statusError ? (
-            <span className="empty-lib">Unable to load library.</span>
-          ) : docList.length === 0 ? (
-            <span className="empty-lib">No documents yet.</span>
-          ) : (
-            docList.map(filename => (
-              <div key={filename} style={{ padding: '0.25rem 0', fontSize: '0.85rem', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', wordBreak: 'break-all' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedDocs.includes(filename)}
-                    onChange={() => {
-                      setSelectedDocs(prev => 
-                        prev.includes(filename) 
-                          ? prev.filter(f => f !== filename) 
-                          : [...prev, filename]
-                      )
-                    }}
-                    disabled={libraryBusy}
-                  />
-                  {filename}
-                </label>
-                <button
-                  className="btn-delete"
-                  onClick={() => handleDelete(filename)}
-                  disabled={libraryBusy}
-                  type="button"
-                  title={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
-                  aria-label={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
-                >
-                  <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" aria-hidden="true" focusable="false">
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
-                  </svg>
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-        {deleteError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteError}</div>}
-        {deleteMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteMessage}</div>}
-
-        <hr className="divider" />
-
-        <div className="btn-row">
-          <button 
-            className="btn-secondary"
-            onClick={handleClear}
-            disabled={libraryBusy || docList.length === 0}
-          >
-            {clearing ? 'Clearing...' : 'Clear library'}
-          </button>
           <button className="btn-secondary" onClick={handleNewChat}>New chat</button>
-        </div>
-        {clearError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
-        {clearMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
+        </LibraryList>
 
         <hr className="divider" />
 
-        <div className="sidebar-label">Tools</div>
-        <button className="btn-primary" id="flashcardBtn" onClick={handleGenerateFlashcards} disabled={studyBusy}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M8 6h11"/>
-            <path d="M8 12h11"/>
-            <path d="M8 18h11"/>
-            <path d="M4 6h.01"/>
-            <path d="M4 12h.01"/>
-            <path d="M4 18h.01"/>
-          </svg>
-          <span>Flashcards</span>
-        </button>
-        <button className="btn-primary" id="quizBtn" onClick={handleGenerateQuiz} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="9"/>
-            <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5"/>
-            <path d="M12 17h.01"/>
-          </svg>
-          <span>Quiz me</span>
-        </button>
-        <button className="btn-primary" id="summaryBtn" onClick={handleGenerateSummary} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M9 4h6"/>
-            <path d="M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2"/>
-            <path d="M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2"/>
-            <path d="M9 13h6"/>
-            <path d="M9 17h4"/>
-          </svg>
-          <span>Summarize</span>
-        </button>
-        <button className="btn-primary" id="businessCopilotBtn" onClick={() => { setCurrentView('knowledge-copilot'); setCopilotData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M4 11 L20 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M10 6 L10 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          <span>Knowledge Copilot</span>
-        </button>
-        <button className="btn-primary" id="knowledgeAuditBtn" onClick={() => { setCurrentView('knowledge-audit'); setAuditData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M14 2v6h6" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M9 15l2 2 4-4" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span>Knowledge Audit</span>
-        </button>
-
+        <ToolButtons
+          currentView={currentView}
+          studyBusy={studyBusy}
+          businessLoading={businessLoading}
+          onGenerateSummary={handleGenerateSummary}
+          onGenerateFlashcards={handleGenerateFlashcards}
+          onGenerateQuiz={handleGenerateQuiz}
+          onOpenKnowledgeCopilot={() => { setCurrentView('knowledge-copilot'); setCopilotData(null); setBusinessError(null); }}
+          onOpenKnowledgeAudit={() => { setCurrentView('knowledge-audit'); setAuditData(null); setBusinessError(null); }}
+        />
         <hr className="divider" />
-        <div className="sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>History</span>
-          {savedChats.length > 0 && (
-            <button 
-              style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '0.7rem', cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
-              onClick={clearHistory}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <div className="library-list" id="historyList">
-          {savedChats.length === 0 ? (
-            <span className="empty-lib">No saved chats yet.</span>
-          ) : (
-            savedChats.map(chat => (
-              <div 
-                key={chat.id} 
-                className="history-item" 
-                onClick={() => loadChat(chat)}
-                style={{ 
-                  background: chat.id === loadedChatId ? 'var(--surface-2)' : 'var(--bg)',
-                  borderColor: chat.id === loadedChatId ? 'var(--gold-dim)' : 'var(--border)'
-                }}
-              >
-                <div className="history-info">
-                  <div className="history-title">{chat.title}</div>
-                  <div className="history-date">
-                    {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                  </div>
-                </div>
-                <button 
-                  className="history-delete" 
-                  onClick={(e) => deleteHistoryChat(chat.id, e)}
-                  title="Delete chat"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-                  </svg>
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+        <HistoryList
+          savedChats={savedChats}
+          loadedChatId={loadedChatId}
+          onLoadChat={loadChat}
+          onDeleteHistoryChat={deleteHistoryChat}
+          onClearHistory={clearHistory}
+        />
       </aside>
 
       {/* MAIN CONTENT AREA */}
@@ -839,36 +651,19 @@ export default function App() {
               <div className="topbar-title" id="topbarTitle">Kroma</div>
               <div className="topbar-sub" id="topbarSub">Your source-grounded study assistant</div>
             </div>
-            {messages.length > 0 && (
-              <button className="btn-secondary" id="exportBtn" onClick={handleExport} style={{ width: 'auto', padding: '0.5rem 1.25rem', flexShrink: 0, whiteSpace: 'nowrap', maxWidth: '140px' }}>
-                <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 3v12"/>
-                  <path d="m7 10 5 5 5-5"/>
-                  <path d="M5 21h14"/>
-                </svg>
-                <span>Export Chat</span>
-              </button>
-            )}
+            <ExportButton visible={messages.length > 0} onExport={handleExport} />
           </div>
         )}
 
         {currentView === 'chat' ? (
           <>
             {/* METRICS */}
-            <div className="metrics" id="metrics">
-              <div className="metric-card">
-                <span className="label">Documents</span>
-                <span className="value" id="metDocs">{statusLoading ? '…' : docCount}</span>
-              </div>
-              <div className="metric-card">
-                <span className="label">Pages</span>
-                <span className="value" id="metPages">{statusLoading ? '…' : pageCount}</span>
-              </div>
-              <div className="metric-card">
-                <span className="label">Chunks</span>
-                <span className="value" id="metChunks">{statusLoading ? '…' : chunkCount}</span>
-              </div>
-            </div>
+            <MetricsBar
+              statusLoading={statusLoading}
+              docCount={docCount}
+              pageCount={pageCount}
+              chunkCount={chunkCount}
+            />
 
             {/* CHAT AREA */}
             <div className="chat-wrapper" id="chatWrapper" ref={chatWrapperRef}>
@@ -877,133 +672,52 @@ export default function App() {
               {messages.length === 0 && !isLoading && (
                 <>
                   {!isIndexed && (
-                    <div className="empty-state" id="emptyState">
-                      <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                        <path d="M7 12h10"/>
-                        <path d="M7 16h6"/>
-                      </svg>
-                      <h3>Ask your documents anything</h3>
-                      <p>No processed documents are available. Upload and process a document first.</p>
-                      <div className="steps">
-                        <div className="step">
-                          <span className="step-num">1</span>
-                          <span>Upload a supported file from your computer</span>
-                        </div>
-                        <div className="step">
-                          <span className="step-num">2</span>
-                          <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
-                        </div>
-                        <div className="step">
-                          <span className="step-num">3</span>
-                          <span>Ask questions and review the cited sources</span>
-                        </div>
-                      </div>
-                    </div>
+                    <EmptyChatState />
                   )}
 
                   {inputValue.trim() === '' && suggestions.length > 0 && (
-                    <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
-                      <div className="suggestions-label">Suggested Questions</div>
-                      <div className="suggestions-row">
-                        {suggestions.map((s, idx) => (
-                          <button 
-                            key={idx} 
-                            className="suggestion-btn" 
-                            onClick={() => setInputValue(s)}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <SuggestionsList
+                      suggestions={suggestions}
+                      onSelectSuggestion={setInputValue}
+                    />
                   )}
                 </>
               )}
 
-              {/* Message list */}
-              {messages.map(msg => (
-                <div
-                  key={msg.id}
-                  className={`message${msg.role === 'user' ? ' user' : ''}`}
-                >
-                  <div className={`avatar${msg.role === 'user' ? ' user' : ' ai'}`}>
-                    {msg.role === 'user' ? 'YOU' : 'AI'}
+              <ChatMessages
+                messages={messages}
+                isLoading={isLoading}
+                chatEndRef={chatEndRef}
+              >
+                {/* Error banner */}
+                {error && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    style={{
+                      background: 'rgba(127,29,29,0.25)',
+                      border: '1px solid #7f1d1d',
+                      borderRadius: '10px',
+                      color: '#fca5a5',
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.9rem',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {error}
                   </div>
-                  <div className="bubble">
-                    {msg.role === 'assistant'
-                      ? <SafeMarkdown content={msg.content} />
-                      : msg.content
-                    }
-                    {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
-                      <SourceList sources={msg.sources} />
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* Loading indicator — reuses existing .thinking / .dots CSS */}
-              {isLoading && (
-                <div className="thinking" aria-live="polite" aria-label="Loading response">
-                  <div className="dots" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                  <span>Thinking…</span>
-                </div>
-              )}
-
-              {/* Error banner */}
-              {error && (
-                <div
-                  role="alert"
-                  aria-live="assertive"
-                  style={{
-                    background: 'rgba(127,29,29,0.25)',
-                    border: '1px solid #7f1d1d',
-                    borderRadius: '10px',
-                    color: '#fca5a5',
-                    padding: '0.75rem 1rem',
-                    fontSize: '0.9rem',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-
-              {/* Auto-scroll sentinel — scrollIntoView targets this element */}
-              <div ref={chatEndRef} aria-hidden="true" />
+                )}
+              </ChatMessages>
             </div>
 
             {/* INPUT BAR */}
-            <div className="input-bar">
-              <textarea
-                ref={textareaRef}
-                id="chatInput"
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything about your documents..."
-                rows={1}
-                disabled={isLoading}
-                aria-label="Chat input"
-              />
-              <button
-                className="btn-send"
-                id="sendBtn"
-                onClick={handleSend}
-                disabled={!canSend}
-                aria-label="Send message"
-                title="Send message"
-              >
-                <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 19V5"/>
-                  <path d="m5 12 7-7 7 7"/>
-                </svg>
-              </button>
-            </div>
+            <ChatInput
+              inputValue={inputValue}
+              onInputChange={setInputValue}
+              onSend={handleSend}
+              isLoading={isLoading}
+              textareaRef={textareaRef}
+            />
           </>
         ) : currentView === 'summary' ? (
           <SummaryView 

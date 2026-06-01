@@ -447,20 +447,152 @@ def generate_summary(context: str, source_ids: list | None = None) -> list:
     raw = response.choices[0].message.content.strip()
     return normalize_summary_sections(raw, context)
 
+SUGGESTION_BLOCKED_TOPICS = [
+    (
+        re.compile(r"\b(team|company|organization)\b.*\b(worked on|built|delivered)\b|\brecent\s+(ai\s+)?(research\s+)?projects?\b", re.IGNORECASE),
+        re.compile(r"\b(worked on|recent\s+(ai\s+)?(research\s+)?projects?|case stud(y|ies)|portfolio)\b", re.IGNORECASE),
+    ),
+    (
+        re.compile(r"\b(internal\s+)?(workflow|workflows|mlops|deployment|deployments|tooling|processes)\b", re.IGNORECASE),
+        re.compile(r"\b(workflow|workflows|mlops|deployment|deployments|tooling|processes)\b", re.IGNORECASE),
+    ),
+    (
+        re.compile(r"\bhiring manager\b.*\b(prefer|preference|want|looking for)\b", re.IGNORECASE),
+        re.compile(r"\bhiring manager\b|\bpreference(s)?\b", re.IGNORECASE),
+    ),
+    (
+        re.compile(r"\b(culture|values|team dynamics|work environment)\b", re.IGNORECASE),
+        re.compile(r"\b(culture|values|team dynamics|work environment)\b", re.IGNORECASE),
+    ),
+    (
+        re.compile(r"\b(future plans?|roadmap|upcoming|next steps|plans to)\b", re.IGNORECASE),
+        re.compile(r"\b(future plans?|roadmap|upcoming|next steps|plans to)\b", re.IGNORECASE),
+    ),
+]
+
+
+def _looks_like_job_context(context: str) -> bool:
+    lower = context.lower()
+    markers = [
+        "job description",
+        "required skills",
+        "requirements",
+        "qualifications",
+        "proposal",
+        "candidate",
+        "hourly",
+        "duration",
+        "job type",
+        "location",
+        "interview",
+    ]
+    return sum(1 for marker in markers if marker in lower) >= 2
+
+
+def _is_grounded_suggestion(question: object, context: str) -> bool:
+    if not isinstance(question, str):
+        return False
+    cleaned = question.strip()
+    if not cleaned or len(cleaned) > 180:
+        return False
+    lower_question = cleaned.lower()
+    lower_context = context.lower()
+    sensitive_terms = {
+        "mlops": ("mlops",),
+        "deployment": ("deployment", "deployments", "deploy", "deployed"),
+        "workflow": ("workflow", "workflows"),
+    }
+    for term, context_terms in sensitive_terms.items():
+        if term in lower_question and not any(context_term in lower_context for context_term in context_terms):
+            return False
+    approach_phrases = (
+        "how does the company approach",
+        "how does the team approach",
+        "how does the organization approach",
+    )
+    explicit_approach_phrases = (
+        "company approach",
+        "company approaches",
+        "team approach",
+        "team approaches",
+        "organization approach",
+        "organization approaches",
+        "approach to model deployment",
+        "approach to mlops",
+    )
+    if any(phrase in lower_question for phrase in approach_phrases) and not any(
+        phrase in lower_context for phrase in explicit_approach_phrases
+    ):
+        return False
+    if "currently in use" in lower_question and "currently in use" not in lower_context:
+        return False
+    for question_pattern, context_pattern in SUGGESTION_BLOCKED_TOPICS:
+        if question_pattern.search(cleaned) and not context_pattern.search(context):
+            return False
+    return True
+
+
+def _fallback_suggestions(context: str) -> list:
+    lower = context.lower()
+    if _looks_like_job_context(context):
+        questions = ["What required skills and experience does this role list?"]
+        has_bonus = re.search(r"\b(bonus|preferred|nice[- ]to[- ]have|plus)\b", lower)
+        has_screening = re.search(r"\b(proposal|interview|screening)\b.*\b(question|answer|ask)\b|\bquestions?\b", lower)
+        if has_bonus and has_screening:
+            questions.append("What bonus qualifications and proposal or interview questions are listed?")
+        elif has_bonus:
+            questions.append("What bonus qualifications or preferred skills are mentioned?")
+        elif has_screening:
+            questions.append("What proposal or interview questions does the job post ask candidates to answer?")
+        questions.append("What candidate profile would be the best fit for the stated role?")
+        if re.search(r"\b(rate|hourly|salary|duration|job type|contract|location|remote|onsite|hybrid)\b", lower):
+            questions.append("What rate, duration, job type, or location details are stated?")
+        questions.append("Which candidates would be rejected or not a fit based on the stated requirements?")
+        return questions
+
+    return [
+        "What are the main topics covered in this document?",
+        "What key facts or requirements are explicitly stated?",
+        "What practical next steps does the document support?",
+    ]
+
+
+def _ground_suggestions(questions: list, context: str, limit: int = 3) -> list:
+    grounded = []
+    seen = set()
+    for question in list(questions or []) + _fallback_suggestions(context):
+        if not _is_grounded_suggestion(question, context):
+            continue
+        cleaned = re.sub(r"\s+", " ", question.strip())
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        grounded.append(cleaned)
+        seen.add(key)
+        if len(grounded) == limit:
+            break
+    return grounded
+
+
 def generate_suggestions(context: str) -> list:
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a document assistant. Given document context, generate exactly 3 interesting questions a user might want to ask. "
+                "You are a document assistant. Given document context, generate exactly 3 source-answerable questions a user might want to ask. "
                 "Respond ONLY with a valid JSON array of strings, no markdown, no explanation, no backticks. "
                 "Format: [\"Question 1?\", \"Question 2?\", \"Question 3?\"] "
-                "Make questions specific, useful, and varied — one factual, one analytical, one practical."
+                "Use only explicit facts in the supplied context. Do not ask about company/team past projects, internal workflows, "
+                "hiring manager preferences, culture details, or future plans unless the context explicitly states that information. "
+                "For job posts, prefer questions about required skills, rejected or not-fit candidates, mentioned tools/frameworks, "
+                "bonus qualifications, proposal or interview questions, rate, duration, job type, location, and candidate fit. "
+                "Do not include questions to ask the employer in the normal suggested questions. "
+                "Do not invent document facts. Make questions specific, useful, and varied."
             )
         },
         {
             "role": "user",
-            "content": f"[Document context]\n{context}\n\nGenerate 3 suggested questions."
+            "content": f"[Document context]\n{context}\n\nGenerate 3 suggested questions that can be answered from this context."
         }
     ]
     response = _groq_client().chat.completions.create(
@@ -468,7 +600,8 @@ def generate_suggestions(context: str) -> list:
         messages=messages,
         temperature=0.4,
     )
-    return _parse_json_array_response(response.choices[0].message.content)
+    questions = _parse_json_array_response(response.choices[0].message.content)
+    return _ground_suggestions(questions, context)
 
 
 def build_source_catalog(sources: list) -> list:
