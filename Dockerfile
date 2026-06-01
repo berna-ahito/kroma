@@ -1,3 +1,13 @@
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -14,6 +24,7 @@ COPY requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt
 
 COPY . .
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Guard: fail build if any CUDA/GPU packages leak in
 RUN pip list 2>/dev/null | grep -qiE "nvidia|cuda|cudnn|cublas|cufft|triton" && { echo "FATAL: CUDA/GPU packages found"; exit 1; } || echo "PASS: No CUDA/GPU packages"
