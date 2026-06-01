@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz } from './api/kromaApi.js'
+import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz, runKnowledgeCopilot, runKnowledgeAudit } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
 import FlashcardsView from './components/study/FlashcardsView.jsx'
 import QuizView from './components/study/QuizView.jsx'
+import KnowledgeCopilotView from './components/business/KnowledgeCopilotView.jsx'
+import KnowledgeAuditView from './components/business/KnowledgeAuditView.jsx'
 
 // Stable unique id for React keys — no external lib needed
 function genId() {
@@ -20,6 +22,11 @@ export default function App() {
   const [summaryData, setSummaryData] = useState(null)
   const [flashcardData, setFlashcardData] = useState(null)
   const [quizData, setQuizData] = useState(null)
+
+  const [businessLoading, setBusinessLoading] = useState(false)
+  const [businessError, setBusinessError] = useState(null)
+  const [copilotData, setCopilotData] = useState(null)
+  const [auditData, setAuditData] = useState(null)
 
   const [inputValue, setInputValue] = useState('')
   const [messages,   setMessages]   = useState([])
@@ -345,6 +352,32 @@ export default function App() {
     }
   }
 
+  const handleRunKnowledgeCopilot = async ({ taskType, audience, request }) => {
+    setBusinessLoading(true)
+    setBusinessError(null)
+    try {
+      const data = await runKnowledgeCopilot({ taskType, audience, request, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      setCopilotData(data)
+    } catch (err) {
+      setBusinessError(err)
+    } finally {
+      setBusinessLoading(false)
+    }
+  }
+
+  const handleRunKnowledgeAudit = async () => {
+    setBusinessLoading(true)
+    setBusinessError(null)
+    try {
+      const data = await runKnowledgeAudit({ selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      setAuditData(data)
+    } catch (err) {
+      setBusinessError(err)
+    } finally {
+      setBusinessLoading(false)
+    }
+  }
+
   async function handleSend() {
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
@@ -603,7 +636,7 @@ export default function App() {
           </svg>
           <span>Summarize</span>
         </button>
-        <button className="btn-primary" id="businessCopilotBtn" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
+        <button className="btn-primary" id="businessCopilotBtn" onClick={() => { setCurrentView('knowledge-copilot'); setCopilotData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
           <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
             <path d="M4 11 L20 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -611,7 +644,7 @@ export default function App() {
           </svg>
           <span>Knowledge Copilot</span>
         </button>
-        <button className="btn-primary" id="knowledgeAuditBtn" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
+        <button className="btn-primary" id="knowledgeAuditBtn" onClick={() => { setCurrentView('knowledge-audit'); setAuditData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
           <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
             <path d="M14 2v6h6" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
@@ -854,6 +887,22 @@ export default function App() {
             data={quizData} 
             loading={studyLoading} 
             error={studyError} 
+            onBack={() => setCurrentView('chat')} 
+          />
+        ) : currentView === 'knowledge-copilot' ? (
+          <KnowledgeCopilotView 
+            data={copilotData} 
+            loading={businessLoading} 
+            error={businessError} 
+            onRun={handleRunKnowledgeCopilot}
+            onBack={() => setCurrentView('chat')} 
+          />
+        ) : currentView === 'knowledge-audit' ? (
+          <KnowledgeAuditView 
+            data={auditData} 
+            loading={businessLoading} 
+            error={businessError} 
+            onRun={handleRunKnowledgeAudit}
             onBack={() => setCurrentView('chat')} 
           />
         ) : null}
