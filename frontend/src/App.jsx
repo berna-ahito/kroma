@@ -7,6 +7,8 @@ import MetricsBar from './components/chat/MetricsBar.jsx'
 import ExportButton from './components/chat/ExportButton.jsx'
 import KromaLogo from './components/layout/KromaLogo.jsx'
 import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
+import UploadPanel from './components/library/UploadPanel.jsx'
+import LibraryList from './components/library/LibraryList.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
 import FlashcardsView from './components/study/FlashcardsView.jsx'
 import QuizView from './components/study/QuizView.jsx'
@@ -408,6 +410,14 @@ export default function App() {
     }
   }
 
+  const handleToggleDoc = (filename) => {
+    setSelectedDocs(prev =>
+      prev.includes(filename)
+        ? prev.filter(f => f !== filename)
+        : [...prev, filename]
+    )
+  }
+
   const handleGenerateSummary = async () => {
     setCurrentView('summary')
     setStudyLoading(true)
@@ -585,106 +595,37 @@ export default function App() {
 
         <hr className="divider" />
 
-        <div className="sidebar-label">Upload</div>
-        <label className="upload-area" id="uploadArea">
-          <input 
-            type="file" 
-            id="fileInput" 
-            accept=".pdf,.txt,.md,.markdown" 
-            multiple 
-            style={{ display: 'none' }} 
-            onChange={handleUpload}
-            disabled={uploading || processing} 
-          />
-          <svg className="upload-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
-            <path d="M14 2v5h5"/>
-            <path d="M9 13h6"/>
-            <path d="M9 17h4"/>
-          </svg>
-          <span className="upload-title">{uploading ? 'Uploading...' : 'Click or drag to upload'}</span>
-          <span className="upload-hint">{uploading ? 'Please wait...' : 'PDF, TXT, Markdown · 25MB max'}</span>
-        </label>
-        {uploadError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadError}</div>}
-        {uploadMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadMessage}</div>}
+        <UploadPanel
+          onUpload={handleUpload}
+          onProcess={handleProcess}
+          uploading={uploading}
+          processing={processing}
+          uploadError={uploadError}
+          uploadMessage={uploadMessage}
+          processError={processError}
+          processMessage={processMessage}
+        />
 
-        <button 
-          className="btn-primary" 
-          id="processBtn" 
-          onClick={handleProcess}
-          disabled={uploading || processing}
-          style={{ marginTop: '0.75rem' }}
+        <hr className="divider" />
+
+        <LibraryList
+          statusLoading={statusLoading}
+          statusError={statusError}
+          docList={docList}
+          selectedDocs={selectedDocs}
+          onToggleDoc={handleToggleDoc}
+          onDeleteDoc={handleDelete}
+          deletingDoc={deletingDoc}
+          libraryBusy={libraryBusy}
+          deleteError={deleteError}
+          deleteMessage={deleteMessage}
+          clearError={clearError}
+          clearMessage={clearMessage}
+          onClearLibrary={handleClear}
+          clearing={clearing}
         >
-          {processing ? 'Processing...' : 'Process Documents'}
-        </button>
-        {processError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processError}</div>}
-        {processMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processMessage}</div>}
-
-        <hr className="divider" />
-
-        <div className="sidebar-label">Library</div>
-        <div className="library-list" id="libraryList">
-          {statusLoading ? (
-            <span className="empty-lib">Loading…</span>
-          ) : statusError ? (
-            <span className="empty-lib">Unable to load library.</span>
-          ) : docList.length === 0 ? (
-            <span className="empty-lib">No documents yet.</span>
-          ) : (
-            docList.map(filename => (
-              <div key={filename} style={{ padding: '0.25rem 0', fontSize: '0.85rem', color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', wordBreak: 'break-all' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedDocs.includes(filename)}
-                    onChange={() => {
-                      setSelectedDocs(prev => 
-                        prev.includes(filename) 
-                          ? prev.filter(f => f !== filename) 
-                          : [...prev, filename]
-                      )
-                    }}
-                    disabled={libraryBusy}
-                  />
-                  {filename}
-                </label>
-                <button
-                  className="btn-delete"
-                  onClick={() => handleDelete(filename)}
-                  disabled={libraryBusy}
-                  type="button"
-                  title={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
-                  aria-label={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
-                >
-                  <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" aria-hidden="true" focusable="false">
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
-                  </svg>
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-        {deleteError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteError}</div>}
-        {deleteMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteMessage}</div>}
-
-        <hr className="divider" />
-
-        <div className="btn-row">
-          <button 
-            className="btn-secondary"
-            onClick={handleClear}
-            disabled={libraryBusy || docList.length === 0}
-          >
-            {clearing ? 'Clearing...' : 'Clear library'}
-          </button>
           <button className="btn-secondary" onClick={handleNewChat}>New chat</button>
-        </div>
-        {clearError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
-        {clearMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
+        </LibraryList>
 
         <hr className="divider" />
 
