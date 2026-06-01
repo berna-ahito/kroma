@@ -11,6 +11,7 @@ import KromaLogo from './components/layout/KromaLogo.jsx'
 import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
 import UploadPanel from './components/library/UploadPanel.jsx'
 import LibraryList from './components/library/LibraryList.jsx'
+import ConfirmDialog from './components/library/ConfirmDialog.jsx'
 import ToolButtons from './components/library/ToolButtons.jsx'
 import HistoryList from './components/history/HistoryList.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
@@ -86,6 +87,7 @@ export default function App() {
   const [clearing, setClearing] = useState(false)
   const [clearError, setClearError] = useState(null)
   const [clearMessage, setClearMessage] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
 
   // Suggestions state
   const [suggestions, setSuggestions] = useState([])
@@ -373,44 +375,62 @@ export default function App() {
   }
 
   const handleDelete = async (filename) => {
-    if (!window.confirm(`Are you sure you want to delete ${filename}?`)) return
-    
-    setDeletingDoc(filename)
-    setDeleteError(null)
-    setDeleteMessage(null)
-    setClearError(null)
-    setClearMessage(null)
-    
-    try {
-      await deleteDocument(filename)
-      setSelectedDocs(prev => prev.filter(f => f !== filename))
-      setDeleteMessage(`Deleted ${filename}.`)
-      await fetchStatus()
-    } catch (err) {
-      setDeleteError(err.message || `Failed to delete ${filename}`)
-    } finally {
-      setDeletingDoc(null)
-    }
+    setConfirmAction({ type: 'delete', filename })
   }
 
   const handleClear = async () => {
-    if (!window.confirm('Are you sure you want to clear the entire library?')) return
-    
-    setClearing(true)
-    setClearError(null)
-    setClearMessage(null)
-    setDeleteError(null)
-    setDeleteMessage(null)
-    
-    try {
-      await clearLibrary()
-      setSelectedDocs([])
-      setClearMessage('Library cleared.')
-      await fetchStatus()
-    } catch (err) {
-      setClearError(err.message || 'Failed to clear library')
-    } finally {
-      setClearing(false)
+    setConfirmAction({ type: 'clear' })
+  }
+
+  const handleCancelConfirm = () => {
+    if (deletingDoc || clearing) return
+    setConfirmAction(null)
+  }
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction || deletingDoc || clearing) return
+
+    if (confirmAction.type === 'delete') {
+      const { filename } = confirmAction
+
+      setDeletingDoc(filename)
+      setDeleteError(null)
+      setDeleteMessage(null)
+      setClearError(null)
+      setClearMessage(null)
+
+      try {
+        await deleteDocument(filename)
+        setSelectedDocs(prev => prev.filter(f => f !== filename))
+        setDeleteMessage(`Deleted ${filename}.`)
+        await fetchStatus()
+      } catch (err) {
+        setDeleteError(err.message || `Failed to delete ${filename}`)
+      } finally {
+        setDeletingDoc(null)
+        setConfirmAction(null)
+      }
+      return
+    }
+
+    if (confirmAction.type === 'clear') {
+      setClearing(true)
+      setClearError(null)
+      setClearMessage(null)
+      setDeleteError(null)
+      setDeleteMessage(null)
+
+      try {
+        await clearLibrary()
+        setSelectedDocs([])
+        setClearMessage('Library cleared.')
+        await fetchStatus()
+      } catch (err) {
+        setClearError(err.message || 'Failed to clear library')
+      } finally {
+        setClearing(false)
+        setConfirmAction(null)
+      }
     }
   }
 
@@ -758,6 +778,21 @@ export default function App() {
           />
         ) : null}
       </main>
+      <ConfirmDialog
+        open={Boolean(confirmAction)}
+        title={confirmAction?.type === 'clear' ? 'Clear entire library?' : 'Delete document?'}
+        message={
+          confirmAction?.type === 'clear'
+            ? 'This will remove all uploaded documents from the library.'
+            : `Are you sure you want to delete ${confirmAction?.filename || ''}?`
+        }
+        confirmLabel={confirmAction?.type === 'clear' ? 'Clear library' : 'Delete'}
+        cancelLabel="Cancel"
+        danger
+        isBusy={Boolean(deletingDoc) || clearing}
+        onConfirm={handleConfirmAction}
+        onCancel={handleCancelConfirm}
+      />
     </>
   )
 }
