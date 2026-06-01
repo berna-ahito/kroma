@@ -61,7 +61,7 @@ export default function FlashcardsView({ data, loading, error, onBack }) {
             <div 
               style={{
                 padding: '2rem',
-                border: '1px solid #ccc',
+                border: flipped ? '1px solid var(--gold-soft)' : '1px solid var(--border)',
                 borderRadius: '8px',
                 minHeight: '200px',
                 display: 'flex',
@@ -69,7 +69,8 @@ export default function FlashcardsView({ data, loading, error, onBack }) {
                 justifyContent: 'center',
                 alignItems: 'center',
                 textAlign: 'center',
-                backgroundColor: flipped ? '#f9f9f9' : '#fff'
+                backgroundColor: flipped ? '#1c1200' : 'var(--surface)',
+                color: flipped ? 'var(--cream)' : 'var(--text-2)'
               }}
             >
               {!flipped ? (

@@ -95,9 +95,12 @@ export default function QuizView({ data, loading, error, onBack }) {
                   style={{ 
                     marginBottom: '2rem', 
                     padding: '1.5rem',
-                    border: '1px solid #ddd',
+                    border: submitted
+                      ? (isCorrect ? '1px solid #16a34a' : '1px solid #dc2626')
+                      : '1px solid var(--border)',
                     borderRadius: '8px',
-                    backgroundColor: submitted ? (isCorrect ? '#f0fdf4' : '#fef2f2') : 'transparent'
+                    backgroundColor: submitted ? (isCorrect ? '#052e16' : '#450a0a') : 'var(--surface)',
+                    color: submitted ? (isCorrect ? '#86efac' : '#fca5a5') : 'var(--text-2)'
                   }}
                 >
                   <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>
@@ -111,10 +114,11 @@ export default function QuizView({ data, loading, error, onBack }) {
                       
                       let choiceStyle = {
                         padding: '0.75rem',
-                        border: '1px solid #ccc',
+                        border: '1px solid var(--border)',
                         borderRadius: '4px',
                         cursor: submitted ? 'default' : 'pointer',
-                        backgroundColor: isSelected ? '#eef2ff' : 'transparent',
+                        backgroundColor: isSelected ? '#1c1200' : 'var(--bg)',
+                        color: isSelected ? 'var(--cream)' : 'var(--text-2)',
                         display: 'flex',
                         alignItems: 'flex-start',
                         gap: '0.5rem'
@@ -122,11 +126,13 @@ export default function QuizView({ data, loading, error, onBack }) {
                       
                       if (submitted) {
                         if (isActualAnswer) {
-                          choiceStyle.backgroundColor = '#dcfce7'
-                          choiceStyle.borderColor = '#22c55e'
+                          choiceStyle.backgroundColor = '#052e16'
+                          choiceStyle.borderColor = '#16a34a'
+                          choiceStyle.color = '#86efac'
                         } else if (isSelected && !isActualAnswer) {
-                          choiceStyle.backgroundColor = '#fee2e2'
-                          choiceStyle.borderColor = '#ef4444'
+                          choiceStyle.backgroundColor = '#450a0a'
+                          choiceStyle.borderColor = '#dc2626'
+                          choiceStyle.color = '#fca5a5'
                         }
                       }
                       
@@ -152,8 +158,8 @@ export default function QuizView({ data, loading, error, onBack }) {
                   </div>
                   
                   {submitted && (
-                    <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #ddd' }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: isCorrect ? '#166534' : '#991b1b' }}>
+                    <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                      <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: isCorrect ? '#86efac' : '#fca5a5' }}>
                         {isCorrect ? '✓ Correct' : '✗ Incorrect'} 
                         {!isCorrect && ` (Answer: ${normalizeLetter(q.answer)})`}
                       </div>

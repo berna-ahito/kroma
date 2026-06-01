@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz, runKnowledgeCopilot, runKnowledgeAudit } from './api/kromaApi.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
@@ -14,6 +14,9 @@ function genId() {
     ? crypto.randomUUID()
     : String(Date.now() + Math.random())
 }
+
+const MAX_SELECTED_DOCS = 25
+const EMPTY_DOC_LIST = []
 
 export default function App() {
   const [currentView, setCurrentView] = useState('chat')
@@ -104,7 +107,19 @@ export default function App() {
   const docCount   = status?.docs?.length ?? 0
   const pageCount  = status?.stats?.total_pages ?? 0
   const chunkCount = status?.stats?.total_chunks ?? 0
-  const docList    = status?.docs ?? []
+  const docList    = status?.docs ?? EMPTY_DOC_LIST
+  const isIndexed  = Boolean(status?.indexed)
+  const docNames   = useMemo(() => new Set(docList), [docList])
+  const activeSelectedDocs = useMemo(
+    () => selectedDocs.filter(filename => docNames.has(filename)),
+    [selectedDocs, docNames]
+  )
+
+  useEffect(() => {
+    if (selectedDocs.length !== activeSelectedDocs.length) {
+      setSelectedDocs(activeSelectedDocs)
+    }
+  }, [selectedDocs, activeSelectedDocs])
 
   // --- HISTORY HELPERS ---
   const getSavedChats = () => {
@@ -199,18 +214,31 @@ export default function App() {
 
   // --- SUGGESTIONS LOGIC ---
   useEffect(() => {
-    if (docList.length > 0 && messages.length === 0 && inputValue.trim() === '' && !isLoading && !statusError) {
+    const canFetchSuggestions =
+      currentView === 'chat' &&
+      messages.length === 0 &&
+      inputValue.trim() === '' &&
+      docList.length > 0 &&
+      isIndexed &&
+      !statusLoading &&
+      !isLoading &&
+      !statusError &&
+      activeSelectedDocs.length <= MAX_SELECTED_DOCS
+
+    if (canFetchSuggestions) {
       let isMounted = true
       setSuggestionsLoading(true)
       setSuggestionsError(null)
-      generateSuggestions({ selectedDocs })
+      generateSuggestions({ selectedDocs: activeSelectedDocs })
         .then(res => {
           if (isMounted && res.questions) {
             setSuggestions(res.questions)
           }
         })
         .catch(err => {
-          if (isMounted) {
+          if (!isMounted) return
+          setSuggestions([])
+          if (err?.status !== 400) {
             setSuggestionsError(err.message || 'Failed to load suggestions')
           }
         })
@@ -220,8 +248,10 @@ export default function App() {
       return () => { isMounted = false }
     } else {
       setSuggestions([])
+      setSuggestionsLoading(false)
+      setSuggestionsError(null)
     }
-  }, [docList.length, messages.length, inputValue, isLoading, statusError, selectedDocs])
+  }, [currentView, docList.length, isIndexed, statusLoading, messages.length, inputValue, isLoading, statusError, activeSelectedDocs])
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files)
@@ -315,7 +345,7 @@ export default function App() {
     setStudyLoading(true)
     setStudyError(null)
     try {
-      const data = await generateSummary({ selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      const data = await generateSummary({ selectedDocs: activeSelectedDocs.length ? activeSelectedDocs : [] })
       setSummaryData(data)
     } catch (err) {
       setStudyError(err)
@@ -329,7 +359,7 @@ export default function App() {
     setStudyLoading(true)
     setStudyError(null)
     try {
-      const data = await generateFlashcards({ count: 8, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      const data = await generateFlashcards({ count: 8, selectedDocs: activeSelectedDocs.length ? activeSelectedDocs : [] })
       setFlashcardData(data)
     } catch (err) {
       setStudyError(err)
@@ -343,7 +373,7 @@ export default function App() {
     setStudyLoading(true)
     setStudyError(null)
     try {
-      const data = await generateQuiz({ difficulty: 'medium', count: 8, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      const data = await generateQuiz({ difficulty: 'medium', count: 8, selectedDocs: activeSelectedDocs.length ? activeSelectedDocs : [] })
       setQuizData(data)
     } catch (err) {
       setStudyError(err)
@@ -356,7 +386,7 @@ export default function App() {
     setBusinessLoading(true)
     setBusinessError(null)
     try {
-      const data = await runKnowledgeCopilot({ taskType, audience, request, selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      const data = await runKnowledgeCopilot({ taskType, audience, request, selectedDocs: activeSelectedDocs.length ? activeSelectedDocs : [] })
       setCopilotData(data)
     } catch (err) {
       setBusinessError(err)
@@ -369,7 +399,7 @@ export default function App() {
     setBusinessLoading(true)
     setBusinessError(null)
     try {
-      const data = await runKnowledgeAudit({ selectedDocs: selectedDocs.length ? selectedDocs : [] })
+      const data = await runKnowledgeAudit({ selectedDocs: activeSelectedDocs.length ? activeSelectedDocs : [] })
       setAuditData(data)
     } catch (err) {
       setBusinessError(err)
@@ -400,7 +430,7 @@ export default function App() {
       const data = await sendChat({
         question: trimmed,
         history: priorMessages,
-        selectedDocs: selectedDocs,
+        selectedDocs: activeSelectedDocs,
       })
       const answer = data?.answer ?? 'No response received.'
       const sources = data?.sources ?? []
@@ -741,29 +771,31 @@ export default function App() {
               {/* Empty state — hidden once messages exist */}
               {messages.length === 0 && !isLoading && (
                 <>
-                  <div className="empty-state" id="emptyState">
-                    <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                      <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                      <path d="M7 12h10"/>
-                      <path d="M7 16h6"/>
-                    </svg>
-                    <h3>Ask your documents anything</h3>
-                    <p>No processed documents are available. Upload and process a document first.</p>
-                    <div className="steps">
-                      <div className="step">
-                        <span className="step-num">1</span>
-                        <span>Upload a supported file from your computer</span>
-                      </div>
-                      <div className="step">
-                        <span className="step-num">2</span>
-                        <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
-                      </div>
-                      <div className="step">
-                        <span className="step-num">3</span>
-                        <span>Ask questions and review the cited sources</span>
+                  {!isIndexed && (
+                    <div className="empty-state" id="emptyState">
+                      <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                        <path d="M7 12h10"/>
+                        <path d="M7 16h6"/>
+                      </svg>
+                      <h3>Ask your documents anything</h3>
+                      <p>No processed documents are available. Upload and process a document first.</p>
+                      <div className="steps">
+                        <div className="step">
+                          <span className="step-num">1</span>
+                          <span>Upload a supported file from your computer</span>
+                        </div>
+                        <div className="step">
+                          <span className="step-num">2</span>
+                          <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
+                        </div>
+                        <div className="step">
+                          <span className="step-num">3</span>
+                          <span>Ask questions and review the cited sources</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {inputValue.trim() === '' && suggestions.length > 0 && (
                     <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
