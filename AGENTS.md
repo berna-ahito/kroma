@@ -14,7 +14,7 @@
 
 ## Current app state
 
-- Kroma is a FastAPI app served from `api.py`.
+- Kroma is a FastAPI app served from `backend/api.py`.
 - The active frontend is the React/Vite dashboard in `frontend/src`, built to `frontend/dist`.
 - Final routes:
   - `/` serves the landing page.
@@ -25,11 +25,11 @@
   - `/assets/*` serves built React assets.
 - Old static app files under `static/` are legacy/unrouted and are not the active app.
 - Backend dev command on Windows PowerShell:
-  `.\venv\Scripts\python.exe -m uvicorn api:app --reload --port 8000`
+  `.\venv\Scripts\python.exe -m uvicorn backend.api:app --reload --port 8000`
 - Frontend dev command:
   `cd frontend; npm run dev`
 - Production-like local route test:
-  `cd frontend; npm run build; cd ..; .\venv\Scripts\python.exe -m uvicorn api:app --reload --port 8000`
+  `cd frontend; npm run build; cd ..; .\venv\Scripts\python.exe -m uvicorn backend.api:app --reload --port 8000`
 - Visit `http://localhost:8000` for the landing page and `http://localhost:8000/dashboard` for the app.
 - Docker builds `frontend/dist` automatically. `frontend/dist` is generated at build time and ignored by git.
 - Production deployments should run Uvicorn without `--reload`.

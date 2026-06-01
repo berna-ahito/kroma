@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from ingest import (
+from .ingest import (
     CHROMA_PATH,
     DOCS_FOLDER,
     STATS_FILE,
@@ -27,7 +27,7 @@ from ingest import (
     is_supported_document,
     load_index_stats,
 )
-from rag import (
+from .rag import (
     build_source_catalog,
     build_source_linked_context,
     business_context_is_relevant,
@@ -64,6 +64,11 @@ def _fastapi_docs_config() -> dict:
 
 
 app = FastAPI(**_fastapi_docs_config())
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+STATIC_DIR = ROOT_DIR / "static"
+FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 DOCS_FOLDER.mkdir(exist_ok=True)
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -763,11 +768,11 @@ def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
 
 @app.get("/")
 def landing():
-    return FileResponse("static/landing.html")
+    return FileResponse(STATIC_DIR / "landing.html")
 
 
 def react_index_response():
-    index_path = Path("frontend/dist/index.html")
+    index_path = FRONTEND_DIST_DIR / "index.html"
     if not index_path.exists():
         return JSONResponse(
             status_code=503,
@@ -789,7 +794,6 @@ def dashboard_page():
     return react_index_response()
 
 
-assets_dir = Path("frontend/dist/assets")
-if assets_dir.exists():
-    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+if FRONTEND_ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="assets")
 

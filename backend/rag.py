@@ -11,15 +11,15 @@ from langchain_community.vectorstores import Chroma
 
 import json
 import re
-from ingest import EMBEDDING_MODEL, load_index_stats
+from .ingest import EMBEDDING_MODEL, load_index_stats
 
 
 load_dotenv()
 os.environ.setdefault("HF_HUB_OFFLINE", "0")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 
-BASE_DIR = Path(__file__).resolve().parent
-CHROMA_PATH = BASE_DIR / "chroma_db"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+CHROMA_PATH = ROOT_DIR / "chroma_db"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 MISSING_CONTEXT_ANSWER = "That information was not found in the uploaded documents."
 
