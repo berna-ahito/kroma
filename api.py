@@ -4,13 +4,15 @@ import hmac
 import os
 import re
 import shutil
+import threading
+import time
 import uuid
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from ingest import (
@@ -50,7 +52,18 @@ from rag import (
     should_show_sources,
 )
 
-app = FastAPI()
+
+def _is_production() -> bool:
+    return os.getenv("APP_ENV", "").lower() == "production" or os.getenv("ENV", "").lower() == "production"
+
+
+def _fastapi_docs_config() -> dict:
+    if _is_production():
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+app = FastAPI(**_fastapi_docs_config())
 
 DOCS_FOLDER.mkdir(exist_ok=True)
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -64,6 +77,9 @@ VALID_QUIZ_DIFFICULTIES = {"easy", "medium", "hard"}
 VALID_BUSINESS_TASK_TYPES = {"answer_from_sources", "draft_reply", "summarize_for_team", "extract_action_items", "risk_check"}
 VALID_BUSINESS_AUDIENCES = {"internal_team", "customer", "partner", "investor", "distributor", "other"}
 DEMO_KEY_HEADER = "x-kroma-demo-key"
+DEFAULT_GROQ_RATE_LIMIT_REQUESTS = 30
+DEFAULT_GROQ_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+GROQ_RATE_LIMIT_DETAIL = "Too many requests. Please try again later."
 MISSING_CONTEXT_ANSWER = "That information was not found in the uploaded documents."
 PUBLIC_DEMO_MAX_QUESTION_CHARS = 180
 PUBLIC_DEMO_NOTE = "Public demo uses a sample document. Enter demo key to test your own files."
@@ -131,6 +147,8 @@ WINDOWS_RESERVED_NAMES = {
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
     "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 }
+_groq_rate_limit_lock = threading.Lock()
+_groq_rate_limit_buckets: dict[str, dict[str, float | int]] = {}
 
 
 # ── Models ──────────────────────────────────────────────────────────────────
@@ -171,6 +189,65 @@ def _require_demo_key(request: Request) -> None:
         return
     if not _has_valid_demo_key(request):
         raise HTTPException(status_code=401, detail="Demo key required.")
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _groq_rate_limit_config() -> tuple[int, int]:
+    return (
+        _positive_int_env("KROMA_RATE_LIMIT_REQUESTS", DEFAULT_GROQ_RATE_LIMIT_REQUESTS),
+        _positive_int_env("KROMA_RATE_LIMIT_WINDOW_SECONDS", DEFAULT_GROQ_RATE_LIMIT_WINDOW_SECONDS),
+    )
+
+
+def _client_ip(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _retry_after_seconds(reset_at: float, now: float) -> int:
+    remaining = reset_at - now
+    if remaining <= 1:
+        return 1
+    retry_after = int(remaining)
+    if remaining > retry_after:
+        retry_after += 1
+    return retry_after
+
+
+def _prune_expired_rate_limit_buckets(now: float) -> None:
+    for identity, bucket in list(_groq_rate_limit_buckets.items()):
+        if now >= float(bucket["reset_at"]):
+            _groq_rate_limit_buckets.pop(identity, None)
+
+
+def _enforce_groq_rate_limit(request: Request) -> None:
+    limit, window_seconds = _groq_rate_limit_config()
+    now = time.monotonic()
+    identity = _client_ip(request)
+    with _groq_rate_limit_lock:
+        _prune_expired_rate_limit_buckets(now)
+        bucket = _groq_rate_limit_buckets.get(identity)
+        if not bucket:
+            _groq_rate_limit_buckets[identity] = {"count": 1, "reset_at": now + window_seconds}
+            return
+
+        if int(bucket["count"]) >= limit:
+            retry_after = _retry_after_seconds(float(bucket["reset_at"]), now)
+            raise HTTPException(
+                status_code=429,
+                detail=GROQ_RATE_LIMIT_DETAIL,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        bucket["count"] = int(bucket["count"]) + 1
 
 
 def _normalize_demo_question(question: str) -> str:
@@ -366,7 +443,16 @@ def health():
 
 
 @app.get("/api/status")
-def status():
+def status(request: Request):
+    if _demo_key_configured() and not _has_valid_demo_key(request):
+        return {
+            "demo_key_required": True,
+            "indexed": False,
+            "stats": None,
+            "docs": [],
+            "public_demo": _public_demo_payload(),
+        }
+
     stats = load_index_stats()
     return {
         "indexed": bool(stats and int(stats.get("total_chunks") or 0) > 0 and CHROMA_PATH.exists()),
@@ -432,6 +518,7 @@ class FlashcardRequest(BaseModel):
 @app.post("/api/flashcards")
 def flashcards(req: FlashcardRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
     count = _validate_study_count(req.count, "Flashcard")
     context, sources = retrieve_chunks("generate flashcards summary overview key concepts", n_results=15, selected_docs=selected_docs)
@@ -455,6 +542,7 @@ class QuizRequest(BaseModel):
 @app.post("/api/quiz")
 def quiz(req: QuizRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
     count = _validate_study_count(req.count, "Quiz")
     difficulty = req.difficulty.strip().lower()
@@ -489,6 +577,7 @@ class BusinessCopilotRequest(BaseModel):
 @app.post("/api/summary")
 def summary(req: SummaryRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
     context, sources = retrieve_chunks("main topics overview summary key points introduction", n_results=20, selected_docs=selected_docs)
     if not context:
@@ -507,6 +596,7 @@ def summary(req: SummaryRequest, request: Request):
 @app.post("/api/suggest")
 def suggest(req: SuggestRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
     context, _ = retrieve_chunks("main topics key concepts overview summary", n_results=10, selected_docs=selected_docs)
     if not context:
@@ -518,6 +608,7 @@ def suggest(req: SuggestRequest, request: Request):
 def chat(req: ChatRequest, request: Request = None):
     if request is not None:
         _require_demo_key(request)
+        _enforce_groq_rate_limit(request)
     question, history, selected_docs = _validate_chat_request(req)
     context, sources = retrieve_chunks(question, selected_docs=selected_docs)
     if not context.strip():
@@ -573,6 +664,7 @@ BUSINESS_NO_CONTEXT_RESPONSE = {
 @app.post("/api/business-copilot")
 def business_copilot(req: BusinessCopilotRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
 
     task_type = req.task_type.strip().lower()
     if task_type not in VALID_BUSINESS_TASK_TYPES:
@@ -644,6 +736,7 @@ KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE = {
 @app.post("/api/knowledge-audit")
 def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
     _require_demo_key(request)
+    _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
     context, sources = retrieve_chunks("overview summary key topics policies terms procedures guidelines", n_results=20, selected_docs=selected_docs)
 
@@ -668,8 +761,31 @@ def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
 def landing():
     return FileResponse("static/landing.html")
 
+
+def react_index_response():
+    index_path = Path("frontend/dist/index.html")
+    if not index_path.exists():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "React build not found. Please run 'npm run build' in the frontend directory."}
+        )
+    return FileResponse(index_path)
+
+
 @app.get("/app")
 def app_page():
-    return FileResponse("static/index.html")
+    return RedirectResponse(url="/dashboard")
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.get("/next")
+def next_page():
+    return RedirectResponse(url="/dashboard")
+
+@app.get("/dashboard")
+def dashboard_page():
+    return react_index_response()
+
+
+assets_dir = Path("frontend/dist/assets")
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+

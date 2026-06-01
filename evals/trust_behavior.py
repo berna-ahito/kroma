@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 import chromadb
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -314,6 +315,129 @@ def _expect_http_error(name: str, status_code: int, func, failures: list) -> Non
     print(f"FAIL: {name}")
 
 
+def _clear_rate_limit_buckets() -> None:
+    with kroma_api._groq_rate_limit_lock:
+        kroma_api._groq_rate_limit_buckets.clear()
+
+
+def run_api_docs_evals(failures: list) -> None:
+    original_app_env = os.environ.get("APP_ENV")
+    original_env = os.environ.get("ENV")
+    try:
+        os.environ["APP_ENV"] = "production"
+        os.environ.pop("ENV", None)
+        production_client = TestClient(FastAPI(**kroma_api._fastapi_docs_config()), raise_server_exceptions=False)
+        production_statuses = {
+            "/docs": production_client.get("/docs").status_code,
+            "/redoc": production_client.get("/redoc").status_code,
+            "/openapi.json": production_client.get("/openapi.json").status_code,
+        }
+        if production_statuses != {"/docs": 404, "/redoc": 404, "/openapi.json": 404}:
+            failures.append(("production docs disabled", "all 404", production_statuses))
+            print("FAIL: production docs disabled")
+        else:
+            print("PASS: production docs disabled")
+
+        os.environ.pop("APP_ENV", None)
+        os.environ.pop("ENV", None)
+        local_client = TestClient(FastAPI(**kroma_api._fastapi_docs_config()), raise_server_exceptions=False)
+        local_statuses = {
+            "/docs": local_client.get("/docs").status_code,
+            "/redoc": local_client.get("/redoc").status_code,
+            "/openapi.json": local_client.get("/openapi.json").status_code,
+        }
+        if local_statuses != {"/docs": 200, "/redoc": 200, "/openapi.json": 200}:
+            failures.append(("non-production docs enabled", "all 200", local_statuses))
+            print("FAIL: non-production docs enabled")
+        else:
+            print("PASS: non-production docs enabled")
+    finally:
+        if original_app_env is None:
+            os.environ.pop("APP_ENV", None)
+        else:
+            os.environ["APP_ENV"] = original_app_env
+        if original_env is None:
+            os.environ.pop("ENV", None)
+        else:
+            os.environ["ENV"] = original_env
+
+
+def run_groq_rate_limit_evals(failures: list) -> None:
+    original_retrieve = kroma_api.retrieve_chunks
+    original_generate = kroma_api.generate_answer
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    original_limit = os.environ.get("KROMA_RATE_LIMIT_REQUESTS")
+    original_window = os.environ.get("KROMA_RATE_LIMIT_WINDOW_SECONDS")
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        os.environ["KROMA_DEMO_KEY"] = "rate-secret"
+        os.environ["KROMA_RATE_LIMIT_REQUESTS"] = "1"
+        os.environ["KROMA_RATE_LIMIT_WINDOW_SECONDS"] = "600"
+        _clear_rate_limit_buckets()
+
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: (
+            "[Source: sample.pdf, page 2]\nKroma is a local document-RAG assistant.",
+            [SOURCE],
+        )
+        kroma_api.generate_answer = lambda *args, **kwargs: "Kroma is a local document-RAG assistant."
+        first = client.post("/api/chat", headers={"X-Kroma-Demo-Key": "rate-secret"}, json={"question": "What is Kroma?"})
+
+        def fail_retrieve(*args, **kwargs):
+            raise AssertionError("Rate-limited request should stop before retrieval.")
+
+        kroma_api.retrieve_chunks = fail_retrieve
+        limited = client.post("/api/chat", headers={"X-Kroma-Demo-Key": "rate-secret"}, json={"question": "What is Kroma?"})
+        retry_after = limited.headers.get("Retry-After")
+        rate_limited_ok = (
+            first.status_code == 200
+            and limited.status_code == 429
+            and limited.json().get("detail") == kroma_api.GROQ_RATE_LIMIT_DETAIL
+            and retry_after is not None
+            and int(retry_after) > 0
+        )
+        if not rate_limited_ok:
+            failures.append(("valid demo key is rate-limited before retrieval", "200 then 429 with Retry-After", {
+                "first": first.status_code,
+                "limited": limited.status_code,
+                "limited_body": limited.json() if limited.headers.get("content-type", "").startswith("application/json") else limited.text,
+                "retry_after": retry_after,
+            }))
+            print("FAIL: valid demo key is rate-limited before retrieval")
+        else:
+            print("PASS: valid demo key is rate-limited before retrieval")
+
+        missing = client.post("/api/chat", json={"question": "What is Kroma?"})
+        wrong = client.post("/api/chat", headers={"X-Kroma-Demo-Key": "wrong"}, json={"question": "What is Kroma?"})
+        if missing.status_code != 401 or wrong.status_code != 401:
+            failures.append(("missing/wrong demo key returns 401 before rate limiting", "401/401", (missing.status_code, wrong.status_code)))
+            print("FAIL: missing/wrong demo key returns 401 before rate limiting")
+        else:
+            print("PASS: missing/wrong demo key returns 401 before rate limiting")
+
+        public_demo = client.post("/api/demo/chat", json={"question": kroma_api.PUBLIC_DEMO_QUESTIONS[0]})
+        if public_demo.status_code != 200 or public_demo.json().get("answer") != kroma_api.PUBLIC_DEMO_ANSWERS[kroma_api._normalize_demo_question(kroma_api.PUBLIC_DEMO_QUESTIONS[0])]["answer"]:
+            failures.append(("public demo remains available outside Groq limiter", "200 public demo answer", public_demo.status_code))
+            print("FAIL: public demo remains available outside Groq limiter")
+        else:
+            print("PASS: public demo remains available outside Groq limiter")
+    finally:
+        kroma_api.retrieve_chunks = original_retrieve
+        kroma_api.generate_answer = original_generate
+        if original_key is None:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+        else:
+            os.environ["KROMA_DEMO_KEY"] = original_key
+        if original_limit is None:
+            os.environ.pop("KROMA_RATE_LIMIT_REQUESTS", None)
+        else:
+            os.environ["KROMA_RATE_LIMIT_REQUESTS"] = original_limit
+        if original_window is None:
+            os.environ.pop("KROMA_RATE_LIMIT_WINDOW_SECONDS", None)
+        else:
+            os.environ["KROMA_RATE_LIMIT_WINDOW_SECONDS"] = original_window
+        _clear_rate_limit_buckets()
+
+
 def run_delete_filename_evals(failures: list) -> None:
     original_docs_folder = kroma_api.DOCS_FOLDER
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
@@ -594,6 +718,9 @@ def run_deleted_only_query_eval(failures: list) -> None:
 def run_demo_key_evals(failures: list) -> None:
     original_retrieve = kroma_api.retrieve_chunks
     original_generate = kroma_api.generate_answer
+    original_load_index_stats = kroma_api.load_index_stats
+    original_docs_folder = kroma_api.DOCS_FOLDER
+    original_chroma_path = kroma_api.CHROMA_PATH
     original_key = os.environ.get("KROMA_DEMO_KEY")
     client = TestClient(kroma_api.app, raise_server_exceptions=False)
     try:
@@ -635,6 +762,52 @@ def run_demo_key_evals(failures: list) -> None:
         else:
             print("PASS: public demo available without key when demo key is configured")
 
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            docs_dir = temp_root / "docs"
+            chroma_dir = temp_root / "chroma"
+            docs_dir.mkdir()
+            chroma_dir.mkdir()
+            (docs_dir / "private.pdf").write_bytes(b"%PDF-1.4\n")
+            kroma_api.DOCS_FOLDER = docs_dir
+            kroma_api.CHROMA_PATH = chroma_dir
+            kroma_api.load_index_stats = lambda: {
+                "total_chunks": 12,
+                "total_pages": 3,
+                "documents": {"private.pdf": {"chunks": 12, "pages": 3}},
+            }
+
+            locked_status_response = client.get("/api/status")
+            locked_status = locked_status_response.json()
+            unlocked_status_response = client.get("/api/status", headers={"X-Kroma-Demo-Key": "demo-secret"})
+            unlocked_status = unlocked_status_response.json()
+            status_metadata_ok = (
+                locked_status_response.status_code == 200
+                and locked_status.get("demo_key_required") is True
+                and locked_status.get("indexed") is False
+                and locked_status.get("stats") is None
+                and locked_status.get("docs") == []
+                and locked_status.get("public_demo", {}).get("document") == kroma_api.PUBLIC_DEMO_DOCUMENT
+                and unlocked_status_response.status_code == 200
+                and unlocked_status.get("stats", {}).get("total_chunks") == 12
+                and unlocked_status.get("docs") == ["private.pdf"]
+                and unlocked_status.get("indexed") is True
+            )
+            if not status_metadata_ok:
+                failures.append(("status metadata protected by demo key", "safe locked status/full unlocked status", {
+                    "locked_status_code": locked_status_response.status_code,
+                    "locked_status": locked_status,
+                    "unlocked_status_code": unlocked_status_response.status_code,
+                    "unlocked_status": unlocked_status,
+                }))
+                print("FAIL: status metadata protected by demo key")
+            else:
+                print("PASS: status metadata protected by demo key")
+
+            kroma_api.load_index_stats = original_load_index_stats
+            kroma_api.DOCS_FOLDER = original_docs_folder
+            kroma_api.CHROMA_PATH = original_chroma_path
+
         blocked_cases = [
             ("upload requires demo key", lambda: client.post("/api/upload", files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")})),
             ("process requires demo key", lambda: client.post("/api/process")),
@@ -671,6 +844,9 @@ def run_demo_key_evals(failures: list) -> None:
     finally:
         kroma_api.retrieve_chunks = original_retrieve
         kroma_api.generate_answer = original_generate
+        kroma_api.load_index_stats = original_load_index_stats
+        kroma_api.DOCS_FOLDER = original_docs_folder
+        kroma_api.CHROMA_PATH = original_chroma_path
         if original_key is None:
             os.environ.pop("KROMA_DEMO_KEY", None)
         else:
@@ -1297,12 +1473,14 @@ def main() -> int:
         print("PASS: flashcard context exposes only source IDs")
 
     run_json_parser_evals(failures)
+    run_api_docs_evals(failures)
     run_delete_filename_evals(failures)
     run_upload_validation_evals(failures)
     run_no_context_chat_eval(failures)
     run_delete_index_evals(failures)
     run_deleted_only_query_eval(failures)
     run_demo_key_evals(failures)
+    run_groq_rate_limit_evals(failures)
     run_request_bound_evals(failures)
     run_business_copilot_evals(failures)
     run_knowledge_audit_evals(failures)
