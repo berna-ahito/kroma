@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="assets/kroma-logo.svg" alt="Kroma" width="360">
-
-# Kroma
+<img src="assets/kroma-logo.svg" alt="Kroma" width="340">
 
 ### Source-grounded document intelligence for study, research, and knowledge work.
 
