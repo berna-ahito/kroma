@@ -309,6 +309,9 @@ JOBDESCRIPTION_CONTEXT = (
     "The role is hourly for a 3-month duration. Candidates without Python or RAG experience are not a fit."
 )
 
+DOC_A_TEXT = "Doc A explains the Alpha onboarding checklist and Python setup steps."
+DOC_B_TEXT = "Doc B explains the Beta incident response workflow and escalation owners."
+
 
 def _expect_http_error(name: str, status_code: int, func, failures: list) -> None:
     try:
@@ -724,6 +727,181 @@ def run_deleted_only_query_eval(failures: list) -> None:
             kroma_rag.SentenceTransformerEmbeddings = original_embeddings
 
 
+def run_multifile_selected_docs_evals(failures: list) -> None:
+    original_chroma_path = kroma_rag.CHROMA_PATH
+    original_load_index_stats = kroma_rag.load_index_stats
+    original_embeddings = kroma_rag.SentenceTransformerEmbeddings
+    original_chroma = kroma_rag.Chroma
+    original_api_retrieve = kroma_api.retrieve_chunks
+    original_api_generate = kroma_api.generate_answer
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    original_limit = os.environ.get("KROMA_RATE_LIMIT_REQUESTS")
+    captured_filters = []
+
+    class FakeDoc:
+        def __init__(self, source: str, content: str):
+            self.page_content = content
+            self.metadata = {
+                "source": source,
+                "file_type": "txt",
+                "location_type": "document",
+                "location_label": "Document",
+                "chunk_id": f"{source}:1",
+                "doc_chunk_id": f"{source}:1",
+            }
+
+    records = [
+        (FakeDoc("doc_a.txt", DOC_A_TEXT), 0.1),
+        (FakeDoc("doc_b.txt", DOC_B_TEXT), 0.2),
+    ]
+
+    class FakeEmbeddings:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeClient:
+        @staticmethod
+        def clear_system_cache():
+            return None
+
+    class FakeChroma:
+        def __init__(self, *args, **kwargs):
+            self._client = FakeClient()
+
+        def similarity_search_with_score(self, question, k=10, filter=None):
+            captured_filters.append(filter)
+            allowed = None
+            if filter:
+                allowed = set(filter.get("source", {}).get("$in", []))
+            question_lower = question.lower()
+            filtered = [
+                item for item in records
+                if allowed is None or item[0].metadata["source"] in allowed
+            ]
+            if "doc_b" in question_lower and allowed == {"doc_a.txt"}:
+                return []
+            if "doc_a" in question_lower and allowed == {"doc_b.txt"}:
+                return []
+            return filtered[:k]
+
+    def answer_from_context(question, context, history=None):
+        if "doc_b" in question.lower() and "Doc B" not in context:
+            return kroma_rag.MISSING_CONTEXT_ANSWER
+        if "doc_a" in question.lower() and "Doc A" not in context:
+            return kroma_rag.MISSING_CONTEXT_ANSWER
+        return context.replace("\n\n", " ")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            kroma_rag.CHROMA_PATH = Path(temp_dir) / "chroma_db"
+            kroma_rag.CHROMA_PATH.mkdir()
+            kroma_rag.load_index_stats = lambda: {
+                "total_chunks": 2,
+                "docs": [
+                    {"name": "doc_a.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "doc_b.txt", "file_type": "txt", "chunks": 1},
+                ],
+            }
+            kroma_rag.SentenceTransformerEmbeddings = FakeEmbeddings
+            kroma_rag.Chroma = FakeChroma
+
+            cases = [
+                ("selected_docs empty searches all indexed docs", [], {"doc_a.txt", "doc_b.txt"}, DOC_A_TEXT, DOC_B_TEXT),
+                ("selected_docs doc_a scopes retrieval to doc_a", ["doc_a.txt"], {"doc_a.txt"}, DOC_A_TEXT, None),
+                ("selected_docs doc_b scopes retrieval to doc_b", ["doc_b.txt"], {"doc_b.txt"}, None, DOC_B_TEXT),
+                ("selected_docs doc_a and doc_b can use both", ["doc_a.txt", "doc_b.txt"], {"doc_a.txt", "doc_b.txt"}, DOC_A_TEXT, DOC_B_TEXT),
+            ]
+            for name, selected_docs, expected_sources, expected_present, expected_optional in cases:
+                context, sources = retrieve_chunks("What does each doc cover?", selected_docs=selected_docs)
+                actual_sources = {source["source"] for source in sources}
+                present_ok = expected_present is None or expected_present in context
+                optional_ok = expected_optional is None or expected_optional in context
+                excluded_ok = (
+                    selected_docs != ["doc_a.txt"] or DOC_B_TEXT not in context
+                ) and (
+                    selected_docs != ["doc_b.txt"] or DOC_A_TEXT not in context
+                )
+                if actual_sources != expected_sources or not present_ok or not optional_ok or not excluded_ok:
+                    failures.append((name, expected_sources, {"sources": actual_sources, "context": context}))
+                    print(f"FAIL: {name}")
+                else:
+                    print(f"PASS: {name}")
+
+            context, sources = retrieve_chunks("What does doc_b say?", selected_docs=["doc_a.txt"])
+            if context != "" or sources != []:
+                failures.append(("doc_b question with only doc_a selected returns no context", ("", []), (context, sources)))
+                print("FAIL: doc_b question with only doc_a selected returns no context")
+            else:
+                print("PASS: doc_b question with only doc_a selected returns no context")
+
+            expected_filters = [
+                {"source": {"$in": ["doc_a.txt", "doc_b.txt"]}},
+                {"source": {"$in": ["doc_a.txt"]}},
+                {"source": {"$in": ["doc_b.txt"]}},
+                {"source": {"$in": ["doc_a.txt", "doc_b.txt"]}},
+                {"source": {"$in": ["doc_a.txt"]}},
+            ]
+            if captured_filters != expected_filters:
+                failures.append(("selected_docs retrieval filters are deterministic", expected_filters, captured_filters))
+                print("FAIL: selected_docs retrieval filters are deterministic")
+            else:
+                print("PASS: selected_docs retrieval filters are deterministic")
+
+            os.environ.pop("KROMA_DEMO_KEY", None)
+            os.environ["KROMA_RATE_LIMIT_REQUESTS"] = "100"
+            _clear_rate_limit_buckets()
+            kroma_api.retrieve_chunks = kroma_rag.retrieve_chunks
+            kroma_api.generate_answer = answer_from_context
+            client = TestClient(kroma_api.app, raise_server_exceptions=False)
+
+            doc_a_response = client.post("/api/chat", json={"question": "What does doc_a explain?", "selected_docs": ["doc_a.txt"]})
+            doc_b_response = client.post("/api/chat", json={"question": "What does doc_b explain?", "selected_docs": ["doc_b.txt"]})
+            both_response = client.post("/api/chat", json={"question": "Compare doc_a and doc_b.", "selected_docs": ["doc_a.txt", "doc_b.txt"]})
+            missing_response = client.post("/api/chat", json={"question": "What does doc_b explain?", "selected_docs": ["doc_a.txt"]})
+
+            output_ok = (
+                doc_a_response.status_code == 200
+                and DOC_A_TEXT in doc_a_response.json().get("answer", "")
+                and DOC_B_TEXT not in doc_a_response.json().get("answer", "")
+                and doc_b_response.status_code == 200
+                and DOC_B_TEXT in doc_b_response.json().get("answer", "")
+                and DOC_A_TEXT not in doc_b_response.json().get("answer", "")
+                and both_response.status_code == 200
+                and DOC_A_TEXT in both_response.json().get("answer", "")
+                and DOC_B_TEXT in both_response.json().get("answer", "")
+                and missing_response.status_code == 200
+                and missing_response.json().get("answer") == kroma_rag.MISSING_CONTEXT_ANSWER
+                and missing_response.json().get("sources") == []
+                and missing_response.json().get("show_sources") is False
+            )
+            if not output_ok:
+                failures.append(("chat output respects selected_docs scopes", "doc_a/doc_b/both/no-context", {
+                    "doc_a": doc_a_response.json(),
+                    "doc_b": doc_b_response.json(),
+                    "both": both_response.json(),
+                    "missing": missing_response.json(),
+                }))
+                print("FAIL: chat output respects selected_docs scopes")
+            else:
+                print("PASS: chat output respects selected_docs scopes")
+        finally:
+            kroma_rag.CHROMA_PATH = original_chroma_path
+            kroma_rag.load_index_stats = original_load_index_stats
+            kroma_rag.SentenceTransformerEmbeddings = original_embeddings
+            kroma_rag.Chroma = original_chroma
+            kroma_api.retrieve_chunks = original_api_retrieve
+            kroma_api.generate_answer = original_api_generate
+            _clear_rate_limit_buckets()
+            if original_key is None:
+                os.environ.pop("KROMA_DEMO_KEY", None)
+            else:
+                os.environ["KROMA_DEMO_KEY"] = original_key
+            if original_limit is None:
+                os.environ.pop("KROMA_RATE_LIMIT_REQUESTS", None)
+            else:
+                os.environ["KROMA_RATE_LIMIT_REQUESTS"] = original_limit
+
+
 def run_demo_key_evals(failures: list) -> None:
     original_retrieve = kroma_api.retrieve_chunks
     original_generate = kroma_api.generate_answer
@@ -976,6 +1154,52 @@ def run_suggestion_grounding_evals(failures: list) -> None:
             print("FAIL: suggest endpoint keeps empty selected_docs as all docs")
         else:
             print("PASS: suggest endpoint keeps empty selected_docs as all docs")
+
+        scoped_contexts = {
+            "doc_a.txt": "[Source: doc_a.txt]\nDoc A lists required skills: Python and FastAPI.",
+            "doc_b.txt": "[Source: doc_b.txt]\nDoc B lists proposal questions about RAG evaluation.",
+        }
+
+        def fake_scoped_retrieve(query, n_results=10, progress_callback=None, selected_docs=None):
+            selected_docs = selected_docs or []
+            if not selected_docs:
+                return ("\n\n".join(scoped_contexts.values()), [SOURCE])
+            selected = [scoped_contexts[name] for name in selected_docs if name in scoped_contexts]
+            return ("\n\n".join(selected), [SOURCE] if selected else [])
+
+        def fake_scoped_suggestions(context):
+            questions = []
+            if "Doc A" in context:
+                questions.append("What required skills does Doc A list?")
+            if "Doc B" in context:
+                questions.append("What proposal questions does Doc B list?")
+            return questions
+
+        kroma_api.retrieve_chunks = fake_scoped_retrieve
+        kroma_api.generate_suggestions = fake_scoped_suggestions
+        doc_a_response = client.post("/api/suggest", json={"selected_docs": ["doc_a.txt"]})
+        doc_b_response = client.post("/api/suggest", json={"selected_docs": ["doc_b.txt"]})
+        both_response = client.post("/api/suggest", json={"selected_docs": []})
+        suggestions_scoped_ok = (
+            doc_a_response.status_code == 200
+            and doc_a_response.json().get("questions") == ["What required skills does Doc A list?"]
+            and doc_b_response.status_code == 200
+            and doc_b_response.json().get("questions") == ["What proposal questions does Doc B list?"]
+            and both_response.status_code == 200
+            and both_response.json().get("questions") == [
+                "What required skills does Doc A list?",
+                "What proposal questions does Doc B list?",
+            ]
+        )
+        if not suggestions_scoped_ok:
+            failures.append(("suggestions respect selected_docs scope", "doc_a/doc_b/all scoped questions", {
+                "doc_a": doc_a_response.json(),
+                "doc_b": doc_b_response.json(),
+                "all": both_response.json(),
+            }))
+            print("FAIL: suggestions respect selected_docs scope")
+        else:
+            print("PASS: suggestions respect selected_docs scope")
     finally:
         kroma_rag._groq_client = original_client
         kroma_api.retrieve_chunks = original_retrieve
@@ -1593,6 +1817,7 @@ def main() -> int:
     run_no_context_chat_eval(failures)
     run_delete_index_evals(failures)
     run_deleted_only_query_eval(failures)
+    run_multifile_selected_docs_evals(failures)
     run_demo_key_evals(failures)
     run_groq_rate_limit_evals(failures)
     run_request_bound_evals(failures)
