@@ -668,12 +668,8 @@ def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
 def landing():
     return FileResponse("static/landing.html")
 
-@app.get("/app")
-def app_page():
-    return FileResponse("static/index.html")
 
-@app.get("/next")
-def next_page():
+def react_index_response():
     index_path = Path("frontend/dist/index.html")
     if not index_path.exists():
         return JSONResponse(
@@ -681,6 +677,19 @@ def next_page():
             content={"detail": "React build not found. Please run 'npm run build' in the frontend directory."}
         )
     return FileResponse(index_path)
+
+
+@app.get("/app")
+def app_page():
+    return react_index_response()
+
+@app.get("/next")
+def next_page():
+    return react_index_response()
+
+@app.get("/legacy-app")
+def legacy_app_page():
+    return FileResponse("static/index.html")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
