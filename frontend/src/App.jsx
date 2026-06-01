@@ -9,6 +9,8 @@ import KromaLogo from './components/layout/KromaLogo.jsx'
 import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
 import UploadPanel from './components/library/UploadPanel.jsx'
 import LibraryList from './components/library/LibraryList.jsx'
+import ToolButtons from './components/library/ToolButtons.jsx'
+import HistoryList from './components/history/HistoryList.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
 import FlashcardsView from './components/study/FlashcardsView.jsx'
 import QuizView from './components/study/QuizView.jsx'
@@ -629,98 +631,24 @@ export default function App() {
 
         <hr className="divider" />
 
-        <div className="sidebar-label">Tools</div>
-        <button className="btn-primary" id="flashcardBtn" onClick={handleGenerateFlashcards} disabled={studyBusy}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M8 6h11"/>
-            <path d="M8 12h11"/>
-            <path d="M8 18h11"/>
-            <path d="M4 6h.01"/>
-            <path d="M4 12h.01"/>
-            <path d="M4 18h.01"/>
-          </svg>
-          <span>Flashcards</span>
-        </button>
-        <button className="btn-primary" id="quizBtn" onClick={handleGenerateQuiz} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="9"/>
-            <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.8-2 2.2-2 3.5"/>
-            <path d="M12 17h.01"/>
-          </svg>
-          <span>Quiz me</span>
-        </button>
-        <button className="btn-primary" id="summaryBtn" onClick={handleGenerateSummary} disabled={studyBusy} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M9 4h6"/>
-            <path d="M9 4a2 2 0 0 0-2 2v1h10V6a2 2 0 0 0-2-2"/>
-            <path d="M7 7H5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7h-2"/>
-            <path d="M9 13h6"/>
-            <path d="M9 17h4"/>
-          </svg>
-          <span>Summarize</span>
-        </button>
-        <button className="btn-primary" id="businessCopilotBtn" onClick={() => { setCurrentView('knowledge-copilot'); setCopilotData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M4 11 L20 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M10 6 L10 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          <span>Knowledge Copilot</span>
-        </button>
-        <button className="btn-primary" id="knowledgeAuditBtn" onClick={() => { setCurrentView('knowledge-audit'); setAuditData(null); setBusinessError(null); }} disabled={studyBusy || businessLoading} style={{ background: 'var(--surface-2)', color: 'var(--text-2)', marginTop: '-0.3rem' }}>
-          <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M14 2v6h6" stroke="currentColor" fill="none" strokeWidth="2" strokeLinejoin="round"/>
-            <path d="M9 15l2 2 4-4" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <span>Knowledge Audit</span>
-        </button>
-
+        <ToolButtons
+          currentView={currentView}
+          studyBusy={studyBusy}
+          businessLoading={businessLoading}
+          onGenerateSummary={handleGenerateSummary}
+          onGenerateFlashcards={handleGenerateFlashcards}
+          onGenerateQuiz={handleGenerateQuiz}
+          onOpenKnowledgeCopilot={() => { setCurrentView('knowledge-copilot'); setCopilotData(null); setBusinessError(null); }}
+          onOpenKnowledgeAudit={() => { setCurrentView('knowledge-audit'); setAuditData(null); setBusinessError(null); }}
+        />
         <hr className="divider" />
-        <div className="sidebar-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>History</span>
-          {savedChats.length > 0 && (
-            <button 
-              style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '0.7rem', cursor: 'pointer', fontFamily: "'Outfit',sans-serif" }}
-              onClick={clearHistory}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <div className="library-list" id="historyList">
-          {savedChats.length === 0 ? (
-            <span className="empty-lib">No saved chats yet.</span>
-          ) : (
-            savedChats.map(chat => (
-              <div 
-                key={chat.id} 
-                className="history-item" 
-                onClick={() => loadChat(chat)}
-                style={{ 
-                  background: chat.id === loadedChatId ? 'var(--surface-2)' : 'var(--bg)',
-                  borderColor: chat.id === loadedChatId ? 'var(--gold-dim)' : 'var(--border)'
-                }}
-              >
-                <div className="history-info">
-                  <div className="history-title">{chat.title}</div>
-                  <div className="history-date">
-                    {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                  </div>
-                </div>
-                <button 
-                  className="history-delete" 
-                  onClick={(e) => deleteHistoryChat(chat.id, e)}
-                  title="Delete chat"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2" fill="none">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-                  </svg>
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+        <HistoryList
+          savedChats={savedChats}
+          loadedChatId={loadedChatId}
+          onLoadChat={loadChat}
+          onDeleteHistoryChat={deleteHistoryChat}
+          onClearHistory={clearHistory}
+        />
       </aside>
 
       {/* MAIN CONTENT AREA */}
