@@ -4,6 +4,8 @@ services:
     runtime: docker
     healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
       - key: GROQ_API_KEY
         sync: false
       - key: KROMA_DEMO_KEY
