@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz, runKnowledgeCopilot, runKnowledgeAudit } from './api/kromaApi.js'
 import { setDemoKey } from './api/demoKey.js'
-import SourceList from './components/chat/SourceList.jsx'
-import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 import MetricsBar from './components/chat/MetricsBar.jsx'
 import ExportButton from './components/chat/ExportButton.jsx'
+import EmptyChatState from './components/chat/EmptyChatState.jsx'
+import SuggestionsList from './components/chat/SuggestionsList.jsx'
+import ChatMessages from './components/chat/ChatMessages.jsx'
+import ChatInput from './components/chat/ChatInput.jsx'
 import KromaLogo from './components/layout/KromaLogo.jsx'
 import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
 import UploadPanel from './components/library/UploadPanel.jsx'
@@ -529,14 +531,6 @@ export default function App() {
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-    // Shift+Enter: browser inserts newline — no code needed
-  }
-
   function handleExport() {
     if (messages.length === 0) {
       setError('No chat to export.')
@@ -575,8 +569,6 @@ export default function App() {
       cleanup()
     }
   }
-
-  const canSend = inputValue.trim() !== '' && !isLoading
 
   return (
     <>
@@ -680,133 +672,52 @@ export default function App() {
               {messages.length === 0 && !isLoading && (
                 <>
                   {!isIndexed && (
-                    <div className="empty-state" id="emptyState">
-                      <svg className="empty-icon ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                        <path d="M7 12h10"/>
-                        <path d="M7 16h6"/>
-                      </svg>
-                      <h3>Ask your documents anything</h3>
-                      <p>No processed documents are available. Upload and process a document first.</p>
-                      <div className="steps">
-                        <div className="step">
-                          <span className="step-num">1</span>
-                          <span>Upload a supported file from your computer</span>
-                        </div>
-                        <div className="step">
-                          <span className="step-num">2</span>
-                          <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
-                        </div>
-                        <div className="step">
-                          <span className="step-num">3</span>
-                          <span>Ask questions and review the cited sources</span>
-                        </div>
-                      </div>
-                    </div>
+                    <EmptyChatState />
                   )}
 
                   {inputValue.trim() === '' && suggestions.length > 0 && (
-                    <div className="suggestions" style={{ borderBottom: 'none', padding: '1rem 0' }}>
-                      <div className="suggestions-label">Suggested Questions</div>
-                      <div className="suggestions-row">
-                        {suggestions.map((s, idx) => (
-                          <button 
-                            key={idx} 
-                            className="suggestion-btn" 
-                            onClick={() => setInputValue(s)}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <SuggestionsList
+                      suggestions={suggestions}
+                      onSelectSuggestion={setInputValue}
+                    />
                   )}
                 </>
               )}
 
-              {/* Message list */}
-              {messages.map(msg => (
-                <div
-                  key={msg.id}
-                  className={`message${msg.role === 'user' ? ' user' : ''}`}
-                >
-                  <div className={`avatar${msg.role === 'user' ? ' user' : ' ai'}`}>
-                    {msg.role === 'user' ? 'YOU' : 'AI'}
+              <ChatMessages
+                messages={messages}
+                isLoading={isLoading}
+                chatEndRef={chatEndRef}
+              >
+                {/* Error banner */}
+                {error && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    style={{
+                      background: 'rgba(127,29,29,0.25)',
+                      border: '1px solid #7f1d1d',
+                      borderRadius: '10px',
+                      color: '#fca5a5',
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.9rem',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {error}
                   </div>
-                  <div className="bubble">
-                    {msg.role === 'assistant'
-                      ? <SafeMarkdown content={msg.content} />
-                      : msg.content
-                    }
-                    {msg.role === 'assistant' && msg.showSources && msg.sources.length > 0 && (
-                      <SourceList sources={msg.sources} />
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* Loading indicator — reuses existing .thinking / .dots CSS */}
-              {isLoading && (
-                <div className="thinking" aria-live="polite" aria-label="Loading response">
-                  <div className="dots" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                  <span>Thinking…</span>
-                </div>
-              )}
-
-              {/* Error banner */}
-              {error && (
-                <div
-                  role="alert"
-                  aria-live="assertive"
-                  style={{
-                    background: 'rgba(127,29,29,0.25)',
-                    border: '1px solid #7f1d1d',
-                    borderRadius: '10px',
-                    color: '#fca5a5',
-                    padding: '0.75rem 1rem',
-                    fontSize: '0.9rem',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-
-              {/* Auto-scroll sentinel — scrollIntoView targets this element */}
-              <div ref={chatEndRef} aria-hidden="true" />
+                )}
+              </ChatMessages>
             </div>
 
             {/* INPUT BAR */}
-            <div className="input-bar">
-              <textarea
-                ref={textareaRef}
-                id="chatInput"
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything about your documents..."
-                rows={1}
-                disabled={isLoading}
-                aria-label="Chat input"
-              />
-              <button
-                className="btn-send"
-                id="sendBtn"
-                onClick={handleSend}
-                disabled={!canSend}
-                aria-label="Send message"
-                title="Send message"
-              >
-                <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 19V5"/>
-                  <path d="m5 12 7-7 7 7"/>
-                </svg>
-              </button>
-            </div>
+            <ChatInput
+              inputValue={inputValue}
+              onInputChange={setInputValue}
+              onSend={handleSend}
+              isLoading={isLoading}
+              textareaRef={textareaRef}
+            />
           </>
         ) : currentView === 'summary' ? (
           <SummaryView 
