@@ -300,6 +300,15 @@ FALLBACK_SOURCE_TEXT = (
     "Embeddings are generated via SentenceTransformers."
 )
 
+JOBDESCRIPTION_CONTEXT = (
+    "[Source: jobdescription_18.txt]\n"
+    "Job Description: We need an AI engineer for a remote contract role. "
+    "Required skills include Python, FastAPI, LangChain, vector databases, and RAG evaluation. "
+    "Bonus qualifications include React experience and familiarity with Groq or OpenAI APIs. "
+    "Proposal questions: Describe your RAG experience and explain how you evaluate answer quality. "
+    "The role is hourly for a 3-month duration. Candidates without Python or RAG experience are not a fit."
+)
+
 
 def _expect_http_error(name: str, status_code: int, func, failures: list) -> None:
     try:
@@ -875,6 +884,111 @@ def run_request_bound_evals(failures: list) -> None:
                 print(f"PASS: {name}")
     finally:
         kroma_api.retrieve_chunks = original_retrieve
+
+
+def run_suggestion_grounding_evals(failures: list) -> None:
+    original_client = kroma_rag._groq_client
+    original_retrieve = kroma_api.retrieve_chunks
+    original_generate = kroma_api.generate_suggestions
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    original_limit = os.environ.get("KROMA_RATE_LIMIT_REQUESTS")
+
+    class FakeGroqClient:
+        class Chat:
+            class Completions:
+                @staticmethod
+                def create(*args, **kwargs):
+                    class Message:
+                        content = json.dumps(
+                            [
+                                "Can you provide an example of a recent AI research project the team has worked on?",
+                                "How does the company approach model deployment and MLOps, and what tools or workflows are currently in use?",
+                                "What required skills and experience does this role list?",
+                            ]
+                        )
+
+                    class Choice:
+                        message = Message()
+
+                    class Response:
+                        choices = [Choice()]
+
+                    return Response()
+
+            completions = Completions()
+
+        chat = Chat()
+
+    try:
+        kroma_rag._groq_client = lambda: FakeGroqClient()
+        suggestions = kroma_rag.generate_suggestions(JOBDESCRIPTION_CONTEXT)
+        joined = " ".join(suggestions).lower()
+        banned_absent = (
+            "team has worked on" not in joined
+            and "recent project" not in joined
+            and "mlops" not in joined
+            and "currently in use" not in joined
+        )
+        has_answerable_theme = any("required skills" in item.lower() for item in suggestions)
+        has_bonus_or_proposal = any(
+            "bonus qualifications" in item.lower() or "proposal" in item.lower()
+            for item in suggestions
+        )
+        has_candidate_fit = any("fit" in item.lower() or "candidate profile" in item.lower() for item in suggestions)
+
+        if not banned_absent:
+            failures.append(("suggestions reject ungrounded project-history prompts", "no banned text", suggestions))
+            print("FAIL: suggestions reject ungrounded project-history prompts")
+        else:
+            print("PASS: suggestions reject ungrounded project-history prompts")
+
+        if not (has_answerable_theme and has_bonus_or_proposal and has_candidate_fit):
+            failures.append(("suggestions include answerable job-post themes", "skills/bonus-or-proposal/fit", suggestions))
+            print("FAIL: suggestions include answerable job-post themes")
+        else:
+            print("PASS: suggestions include answerable job-post themes")
+
+        os.environ.pop("KROMA_DEMO_KEY", None)
+        os.environ["KROMA_RATE_LIMIT_REQUESTS"] = "100"
+        _clear_rate_limit_buckets()
+        captured = {}
+
+        def fake_retrieve(query, n_results=10, progress_callback=None, selected_docs=None):
+            captured["query"] = query
+            captured["n_results"] = n_results
+            captured["selected_docs"] = selected_docs
+            return (JOBDESCRIPTION_CONTEXT, [SOURCE])
+
+        kroma_api.retrieve_chunks = fake_retrieve
+        kroma_api.generate_suggestions = lambda context: ["What required skills and experience does this role list?"]
+
+        client = TestClient(kroma_api.app, raise_server_exceptions=False)
+        response = client.post("/api/suggest", json={"selected_docs": ["jobdescription_18.txt"]})
+        if response.status_code != 200 or captured.get("selected_docs") != ["jobdescription_18.txt"]:
+            failures.append(("suggest endpoint preserves selected_docs filter", ["jobdescription_18.txt"], captured))
+            print("FAIL: suggest endpoint preserves selected_docs filter")
+        else:
+            print("PASS: suggest endpoint preserves selected_docs filter")
+
+        response_all = client.post("/api/suggest", json={"selected_docs": []})
+        if response_all.status_code != 200 or captured.get("selected_docs") != []:
+            failures.append(("suggest endpoint keeps empty selected_docs as all docs", [], captured))
+            print("FAIL: suggest endpoint keeps empty selected_docs as all docs")
+        else:
+            print("PASS: suggest endpoint keeps empty selected_docs as all docs")
+    finally:
+        kroma_rag._groq_client = original_client
+        kroma_api.retrieve_chunks = original_retrieve
+        kroma_api.generate_suggestions = original_generate
+        _clear_rate_limit_buckets()
+        if original_key is None:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+        else:
+            os.environ["KROMA_DEMO_KEY"] = original_key
+        if original_limit is None:
+            os.environ.pop("KROMA_RATE_LIMIT_REQUESTS", None)
+        else:
+            os.environ["KROMA_RATE_LIMIT_REQUESTS"] = original_limit
 
 
 def run_json_parser_evals(failures: list) -> None:
@@ -1482,6 +1596,7 @@ def main() -> int:
     run_demo_key_evals(failures)
     run_groq_rate_limit_evals(failures)
     run_request_bound_evals(failures)
+    run_suggestion_grounding_evals(failures)
     run_business_copilot_evals(failures)
     run_knowledge_audit_evals(failures)
 
