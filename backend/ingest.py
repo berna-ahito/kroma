@@ -17,12 +17,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 os.environ.setdefault("HF_HUB_OFFLINE", "0")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")
 
-BASE_DIR = Path(__file__).resolve().parent
-DOCS_FOLDER = BASE_DIR / "docs"
-CHROMA_PATH = BASE_DIR / "chroma_db"
-NEXT_CHROMA_PATH = BASE_DIR / "chroma_db_next"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DOCS_FOLDER = ROOT_DIR / "docs"
+CHROMA_PATH = ROOT_DIR / "chroma_db"
+NEXT_CHROMA_PATH = ROOT_DIR / "chroma_db_next"
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-STATS_FILE = BASE_DIR / "index_stats.json"
+STATS_FILE = ROOT_DIR / "index_stats.json"
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 120
 SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}

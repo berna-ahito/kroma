@@ -35,4 +35,4 @@ ENV PORT=8000
 ENV HF_HUB_OFFLINE=0
 ENV TRANSFORMERS_OFFLINE=0
 
-CMD uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn backend.api:app --host 0.0.0.0 --port ${PORT:-8000}

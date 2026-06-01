@@ -20,10 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import api as kroma_api  # noqa: E402
-import ingest as kroma_ingest  # noqa: E402
-import rag as kroma_rag  # noqa: E402
-from rag import (  # noqa: E402
+import backend.api as kroma_api  # noqa: E402
+import backend.ingest as kroma_ingest  # noqa: E402
+import backend.rag as kroma_rag  # noqa: E402
+from backend.rag import (  # noqa: E402
     build_source_catalog,
     build_source_linked_context,
     business_context_is_relevant,
@@ -1526,7 +1526,7 @@ def run_business_copilot_evals(failures: list) -> None:
 
 
 def run_knowledge_audit_evals(failures: list) -> None:
-    from rag import (
+    from backend.rag import (
         sanitize_knowledge_audit_source_ids,
         normalize_knowledge_audit_output,
         compute_readiness_verdict
