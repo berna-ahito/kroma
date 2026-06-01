@@ -2,6 +2,28 @@ import React, { useState, useMemo, useEffect } from 'react'
 import SafeMarkdown from '../chat/SafeMarkdown.jsx'
 import StudySources from './StudySources.jsx'
 
+function valueToText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.map(valueToText).filter(Boolean).join('\n')
+  if (typeof value !== 'object') return String(value)
+  if (value.text != null && value.text !== '') return valueToText(value.text)
+  if (value.area != null && value.area !== '') {
+    const detail = value.detail ? `: ${valueToText(value.detail)}` : ''
+    return `${valueToText(value.area)}${detail}`
+  }
+  if (value.detail != null && value.detail !== '') return valueToText(value.detail)
+  if (value.question != null && value.question !== '') return valueToText(value.question)
+  if (value.answer != null && value.answer !== '') return valueToText(value.answer)
+  if (value.label != null && value.label !== '') return valueToText(value.label)
+  return JSON.stringify(value)
+}
+
+function sourceIdsFor(value) {
+  return Array.isArray(value?.source_ids) ? value.source_ids : []
+}
+
 export default function QuizView({ data, loading, error, onBack }) {
   const [answers, setAnswers] = useState({})
   const [submitted, setSubmitted] = useState(false)
@@ -54,7 +76,7 @@ export default function QuizView({ data, loading, error, onBack }) {
     let correct = 0
     questions.forEach((q, idx) => {
       const selected = answers[idx]
-      if (normalizeLetter(selected) === normalizeLetter(q.answer)) {
+      if (normalizeLetter(selected) === normalizeLetter(valueToText(q.answer))) {
         correct++
       }
     })
@@ -89,8 +111,9 @@ export default function QuizView({ data, loading, error, onBack }) {
         {!loading && !error && hasQuestions && (
           <div className="quiz-tool-list">
             {questions.map((q, qIndex) => {
+              const choices = Array.isArray(q.choices) ? q.choices : []
               const selectedChoice = answers[qIndex]
-              const isCorrect = submitted && normalizeLetter(selectedChoice) === normalizeLetter(q.answer)
+              const isCorrect = submitted && normalizeLetter(selectedChoice) === normalizeLetter(valueToText(q.answer))
               const isWrong = submitted && !isCorrect
               
               return (
@@ -99,12 +122,13 @@ export default function QuizView({ data, loading, error, onBack }) {
                   className={`tool-card quiz-question-card${submitted ? (isCorrect ? ' is-correct' : ' is-incorrect') : ''}`}
                 >
                   <div className="tool-kicker">Question {qIndex + 1}</div>
-                  <h3 className="quiz-question-title"><SafeMarkdown content={q.question} inline /></h3>
+                  <h3 className="quiz-question-title"><SafeMarkdown content={valueToText(q.question)} inline /></h3>
                   
                   <div className="tool-choice-list">
-                    {q.choices.map((choice, cIndex) => {
-                      const isSelected = selectedChoice === choice
-                      const isActualAnswer = submitted && normalizeLetter(choice) === normalizeLetter(q.answer)
+                    {choices.map((choice, cIndex) => {
+                      const choiceText = valueToText(choice)
+                      const isSelected = selectedChoice === choiceText
+                      const isActualAnswer = submitted && normalizeLetter(choiceText) === normalizeLetter(valueToText(q.answer))
                       const choiceClass = [
                         'tool-choice',
                         isSelected ? 'tool-choice--selected' : '',
@@ -116,7 +140,7 @@ export default function QuizView({ data, loading, error, onBack }) {
                         <div 
                           key={cIndex} 
                           className={choiceClass}
-                          onClick={() => handleSelect(qIndex, cIndex, choice)}
+                          onClick={() => handleSelect(qIndex, cIndex, choiceText)}
                         >
                           <input 
                             type="radio" 
@@ -125,7 +149,7 @@ export default function QuizView({ data, loading, error, onBack }) {
                             readOnly
                           />
                           <div className="tool-choice-text">
-                            <SafeMarkdown content={choice} inline />
+                            <SafeMarkdown content={choiceText} inline />
                           </div>
                         </div>
                       )
@@ -136,17 +160,17 @@ export default function QuizView({ data, loading, error, onBack }) {
                     <div className="quiz-feedback">
                       <div className={`tool-pill${isCorrect ? ' tool-success' : ' tool-error-pill'}`}>
                         {isCorrect ? 'Correct' : 'Incorrect'}
-                        {!isCorrect && ` (Answer: ${normalizeLetter(q.answer)})`}
+                        {!isCorrect && ` (Answer: ${normalizeLetter(valueToText(q.answer))})`}
                       </div>
                       
                       {q.explanation && (
                         <div className="tool-markdown">
-                          <SafeMarkdown content={q.explanation} />
+                          <SafeMarkdown content={valueToText(q.explanation)} />
                         </div>
                       )}
                       
                       <StudySources 
-                        sourceIds={q.source_ids || []} 
+                        sourceIds={sourceIdsFor(q)}
                         sourceMap={sourceMap} 
                         showUnsourced={true} 
                       />

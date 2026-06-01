@@ -2,6 +2,27 @@ import React, { useState, useMemo, useEffect } from 'react'
 import SafeMarkdown from '../chat/SafeMarkdown.jsx'
 import StudySources from './StudySources.jsx'
 
+function valueToText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.map(valueToText).filter(Boolean).join('\n')
+  if (typeof value !== 'object') return String(value)
+  if (value.text != null && value.text !== '') return valueToText(value.text)
+  if (value.area != null && value.area !== '') {
+    const detail = value.detail ? `: ${valueToText(value.detail)}` : ''
+    return `${valueToText(value.area)}${detail}`
+  }
+  if (value.detail != null && value.detail !== '') return valueToText(value.detail)
+  if (value.question != null && value.question !== '') return valueToText(value.question)
+  if (value.answer != null && value.answer !== '') return valueToText(value.answer)
+  return JSON.stringify(value)
+}
+
+function sourceIdsFor(value) {
+  return Array.isArray(value?.source_ids) ? value.source_ids : []
+}
+
 export default function FlashcardsView({ data, loading, error, onBack }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -69,18 +90,18 @@ export default function FlashcardsView({ data, loading, error, onBack }) {
                 <div className="study-flashcard-face">
                   <span className="tool-kicker">Question</span>
                   <h3>
-                    <SafeMarkdown content={currentCard.question} inline />
+                    <SafeMarkdown content={valueToText(currentCard.question)} inline />
                   </h3>
                 </div>
               ) : (
                 <div className="study-flashcard-face study-flashcard-answer">
                   <span className="tool-kicker">Answer</span>
                   <div className="study-flashcard-answer-text">
-                    <SafeMarkdown content={currentCard.answer} inline />
+                    <SafeMarkdown content={valueToText(currentCard.answer)} inline />
                   </div>
-                  {currentCard.source_ids && currentCard.source_ids.length > 0 && (
+                  {sourceIdsFor(currentCard).length > 0 && (
                     <StudySources 
-                      sourceIds={currentCard.source_ids} 
+                      sourceIds={sourceIdsFor(currentCard)}
                       sourceMap={sourceMap} 
                       showUnsourced={true} 
                     />

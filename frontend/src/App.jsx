@@ -121,6 +121,30 @@ export default function App() {
     fetchStatus()
   }, [])
 
+  useEffect(() => {
+    if (!uploadMessage) return undefined
+    const timer = window.setTimeout(() => setUploadMessage(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [uploadMessage])
+
+  useEffect(() => {
+    if (!processMessage) return undefined
+    const timer = window.setTimeout(() => setProcessMessage(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [processMessage])
+
+  useEffect(() => {
+    if (!deleteMessage) return undefined
+    const timer = window.setTimeout(() => setDeleteMessage(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [deleteMessage])
+
+  useEffect(() => {
+    if (!clearMessage) return undefined
+    const timer = window.setTimeout(() => setClearMessage(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [clearMessage])
+
   // Derived values from status
   const docCount   = status?.docs?.length ?? 0
   const pageCount  = status?.stats?.total_pages ?? 0
@@ -626,13 +650,21 @@ export default function App() {
                   />
                   {filename}
                 </label>
-                <button 
-                  className="btn-secondary" 
-                  style={{ padding: '0.1rem 0.3rem', fontSize: '0.7rem' }}
+                <button
+                  className="btn-delete"
                   onClick={() => handleDelete(filename)}
                   disabled={libraryBusy}
+                  type="button"
+                  title={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
+                  aria-label={deletingDoc === filename ? `Deleting ${filename}` : `Delete ${filename}`}
                 >
-                  {deletingDoc === filename ? 'Deleting...' : 'Delete'}
+                  <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" aria-hidden="true" focusable="false">
+                    <path d="M3 6h18"/>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                    <path d="M10 11v6"/>
+                    <path d="M14 11v6"/>
+                  </svg>
                 </button>
               </div>
             ))
@@ -754,20 +786,24 @@ export default function App() {
 
       {/* MAIN CONTENT AREA */}
       <main className="main">
-        <div className="topbar">
-          <div>
-            <div className="topbar-title" id="topbarTitle">Kroma</div>
-            <div className="topbar-sub" id="topbarSub">Your source-grounded study assistant</div>
+        {currentView === 'chat' && (
+          <div className="topbar">
+            <div>
+              <div className="topbar-title" id="topbarTitle">Kroma</div>
+              <div className="topbar-sub" id="topbarSub">Your source-grounded study assistant</div>
+            </div>
+            {messages.length > 0 && (
+              <button className="btn-secondary" id="exportBtn" onClick={handleExport} style={{ width: 'auto', padding: '0.5rem 1.25rem', flexShrink: 0, whiteSpace: 'nowrap', maxWidth: '140px' }}>
+                <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3v12"/>
+                  <path d="m7 10 5 5 5-5"/>
+                  <path d="M5 21h14"/>
+                </svg>
+                <span>Export Chat</span>
+              </button>
+            )}
           </div>
-          <button className="btn-secondary" id="exportBtn" onClick={handleExport} style={{ width: 'auto', padding: '0.5rem 1.25rem', display: messages.length > 0 ? 'flex' : 'none', flexShrink: 0, whiteSpace: 'nowrap', maxWidth: '140px' }}>
-            <svg className="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 3v12"/>
-              <path d="m7 10 5 5 5-5"/>
-              <path d="M5 21h14"/>
-            </svg>
-            <span>Export Chat</span>
-          </button>
-        </div>
+        )}
 
         {currentView === 'chat' ? (
           <>
