@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { sendChat, getStatus, uploadDocument, processDocuments, deleteDocument, clearLibrary, generateSuggestions, generateSummary, generateFlashcards, generateQuiz, runKnowledgeCopilot, runKnowledgeAudit } from './api/kromaApi.js'
+import { setDemoKey } from './api/demoKey.js'
 import SourceList from './components/chat/SourceList.jsx'
 import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
@@ -58,6 +59,8 @@ export default function App() {
   const [status,        setStatus]        = useState(null)
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusError,   setStatusError]   = useState(null)
+  const [demoKeyInput,  setDemoKeyInput]  = useState('')
+  const [demoKeyMessage, setDemoKeyMessage] = useState(null)
 
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
@@ -120,6 +123,21 @@ export default function App() {
   useEffect(() => {
     fetchStatus()
   }, [])
+
+  const applyDemoKey = async () => {
+    const value = demoKeyInput.trim()
+    setDemoKey(value)
+    setDemoKeyInput('')
+    setDemoKeyMessage(value ? 'Demo key saved for this session.' : 'Demo key cleared for this session.')
+    await fetchStatus()
+  }
+
+  const clearDemoKey = async () => {
+    setDemoKey('')
+    setDemoKeyInput('')
+    setDemoKeyMessage('Demo key cleared for this session.')
+    await fetchStatus()
+  }
 
   useEffect(() => {
     if (!uploadMessage) return undefined
@@ -571,6 +589,17 @@ export default function App() {
           type="password"
           placeholder="Demo key if required"
           autoComplete="off"
+          value={demoKeyInput}
+          onChange={event => {
+            setDemoKeyInput(event.target.value)
+            setDemoKeyMessage(null)
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              applyDemoKey()
+            }
+          }}
           style={{
             width: '100%',
             background: 'var(--surface-2)',
@@ -582,8 +611,26 @@ export default function App() {
             fontSize: '0.9rem',
             outline: 'none'
           }}
-          readOnly
         />
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={applyDemoKey}
+            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
+          >
+            Apply
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={clearDemoKey}
+            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
+          >
+            Clear
+          </button>
+        </div>
+        {demoKeyMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{demoKeyMessage}</div>}
 
         <hr className="divider" />
 

@@ -366,7 +366,16 @@ def health():
 
 
 @app.get("/api/status")
-def status():
+def status(request: Request):
+    if _demo_key_configured() and not _has_valid_demo_key(request):
+        return {
+            "demo_key_required": True,
+            "indexed": False,
+            "stats": None,
+            "docs": [],
+            "public_demo": _public_demo_payload(),
+        }
+
     stats = load_index_stats()
     return {
         "indexed": bool(stats and int(stats.get("total_chunks") or 0) > 0 and CHROMA_PATH.exists()),

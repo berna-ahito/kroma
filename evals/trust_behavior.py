@@ -594,6 +594,9 @@ def run_deleted_only_query_eval(failures: list) -> None:
 def run_demo_key_evals(failures: list) -> None:
     original_retrieve = kroma_api.retrieve_chunks
     original_generate = kroma_api.generate_answer
+    original_load_index_stats = kroma_api.load_index_stats
+    original_docs_folder = kroma_api.DOCS_FOLDER
+    original_chroma_path = kroma_api.CHROMA_PATH
     original_key = os.environ.get("KROMA_DEMO_KEY")
     client = TestClient(kroma_api.app, raise_server_exceptions=False)
     try:
@@ -635,6 +638,52 @@ def run_demo_key_evals(failures: list) -> None:
         else:
             print("PASS: public demo available without key when demo key is configured")
 
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            docs_dir = temp_root / "docs"
+            chroma_dir = temp_root / "chroma"
+            docs_dir.mkdir()
+            chroma_dir.mkdir()
+            (docs_dir / "private.pdf").write_bytes(b"%PDF-1.4\n")
+            kroma_api.DOCS_FOLDER = docs_dir
+            kroma_api.CHROMA_PATH = chroma_dir
+            kroma_api.load_index_stats = lambda: {
+                "total_chunks": 12,
+                "total_pages": 3,
+                "documents": {"private.pdf": {"chunks": 12, "pages": 3}},
+            }
+
+            locked_status_response = client.get("/api/status")
+            locked_status = locked_status_response.json()
+            unlocked_status_response = client.get("/api/status", headers={"X-Kroma-Demo-Key": "demo-secret"})
+            unlocked_status = unlocked_status_response.json()
+            status_metadata_ok = (
+                locked_status_response.status_code == 200
+                and locked_status.get("demo_key_required") is True
+                and locked_status.get("indexed") is False
+                and locked_status.get("stats") is None
+                and locked_status.get("docs") == []
+                and locked_status.get("public_demo", {}).get("document") == kroma_api.PUBLIC_DEMO_DOCUMENT
+                and unlocked_status_response.status_code == 200
+                and unlocked_status.get("stats", {}).get("total_chunks") == 12
+                and unlocked_status.get("docs") == ["private.pdf"]
+                and unlocked_status.get("indexed") is True
+            )
+            if not status_metadata_ok:
+                failures.append(("status metadata protected by demo key", "safe locked status/full unlocked status", {
+                    "locked_status_code": locked_status_response.status_code,
+                    "locked_status": locked_status,
+                    "unlocked_status_code": unlocked_status_response.status_code,
+                    "unlocked_status": unlocked_status,
+                }))
+                print("FAIL: status metadata protected by demo key")
+            else:
+                print("PASS: status metadata protected by demo key")
+
+            kroma_api.load_index_stats = original_load_index_stats
+            kroma_api.DOCS_FOLDER = original_docs_folder
+            kroma_api.CHROMA_PATH = original_chroma_path
+
         blocked_cases = [
             ("upload requires demo key", lambda: client.post("/api/upload", files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")})),
             ("process requires demo key", lambda: client.post("/api/process")),
@@ -671,6 +720,9 @@ def run_demo_key_evals(failures: list) -> None:
     finally:
         kroma_api.retrieve_chunks = original_retrieve
         kroma_api.generate_answer = original_generate
+        kroma_api.load_index_stats = original_load_index_stats
+        kroma_api.DOCS_FOLDER = original_docs_folder
+        kroma_api.CHROMA_PATH = original_chroma_path
         if original_key is None:
             os.environ.pop("KROMA_DEMO_KEY", None)
         else:
