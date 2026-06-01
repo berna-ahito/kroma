@@ -6,6 +6,7 @@ import SafeMarkdown from './components/chat/SafeMarkdown.jsx'
 import MetricsBar from './components/chat/MetricsBar.jsx'
 import ExportButton from './components/chat/ExportButton.jsx'
 import KromaLogo from './components/layout/KromaLogo.jsx'
+import DemoKeyPanel from './components/library/DemoKeyPanel.jsx'
 import SummaryView from './components/study/SummaryView.jsx'
 import FlashcardsView from './components/study/FlashcardsView.jsx'
 import QuizView from './components/study/QuizView.jsx'
@@ -571,54 +572,16 @@ export default function App() {
       <aside className="sidebar">
         <KromaLogo />
 
-        <div className="sidebar-label">Demo access</div>
-        <input
-          id="demoKeyInput"
-          type="password"
-          placeholder="Demo key if required"
-          autoComplete="off"
-          value={demoKeyInput}
-          onChange={event => {
-            setDemoKeyInput(event.target.value)
+        <DemoKeyPanel
+          demoKeyInput={demoKeyInput}
+          setDemoKeyInput={value => {
+            setDemoKeyInput(value)
             setDemoKeyMessage(null)
           }}
-          onKeyDown={event => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              applyDemoKey()
-            }
-          }}
-          style={{
-            width: '100%',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            color: 'var(--text)',
-            padding: '0.65rem 0.75rem',
-            fontFamily: "'Outfit',sans-serif",
-            fontSize: '0.9rem',
-            outline: 'none'
-          }}
+          demoKeyMessage={demoKeyMessage}
+          onApplyDemoKey={applyDemoKey}
+          onClearDemoKey={clearDemoKey}
         />
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={applyDemoKey}
-            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
-          >
-            Apply
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={clearDemoKey}
-            style={{ flex: 1, padding: '0.55rem 0.75rem' }}
-          >
-            Clear
-          </button>
-        </div>
-        {demoKeyMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{demoKeyMessage}</div>}
 
         <hr className="divider" />
 
