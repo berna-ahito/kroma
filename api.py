@@ -672,4 +672,19 @@ def landing():
 def app_page():
     return FileResponse("static/index.html")
 
+@app.get("/next")
+def next_page():
+    index_path = Path("frontend/dist/index.html")
+    if not index_path.exists():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "React build not found. Please run 'npm run build' in the frontend directory."}
+        )
+    return FileResponse(index_path)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+assets_dir = Path("frontend/dist/assets")
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+
