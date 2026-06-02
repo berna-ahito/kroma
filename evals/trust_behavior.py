@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 
 import chromadb
 from fastapi import FastAPI
@@ -1010,11 +1011,14 @@ def run_hybrid_retrieval_evals(failures: list) -> None:
             )
             trace = next((payload for event, payload in events if event == "trace"), {})
             trace_ok = (
-                trace.get("query") == "What is the ZXQ-9187 price on 2026-06-02?"
+                trace.get("query_redacted") == "[redacted]"
+                and "query" not in trace
+                and trace.get("query_length") == len("What is the ZXQ-9187 price on 2026-06-02?")
                 and trace.get("vector_candidate_count") == 1
                 and trace.get("keyword_candidate_count", 0) >= 1
                 and trace.get("final_candidate_count") == len(sources)
-                and all("ZXQ-9187" not in str(value) for key, value in trace.items() if key != "query")
+                and trace.get("retrieval_mode") in {"keyword", "hybrid"}
+                and all("preview" not in candidate for candidate in trace.get("final_candidates", []))
             )
             if not exact_ok or not trace_ok:
                 failures.append(("hybrid exact-term retrieval with trace", "exact source + safe trace", {"sources": sources, "trace": trace}))
@@ -1050,6 +1054,207 @@ def run_hybrid_retrieval_evals(failures: list) -> None:
             kroma_rag.load_index_stats = original_load_index_stats
             kroma_rag.SentenceTransformerEmbeddings = original_embeddings
             kroma_rag.Chroma = original_chroma
+
+
+def run_retrieval_trace_evals(failures: list) -> None:
+    original_chroma_path = kroma_rag.CHROMA_PATH
+    original_load_index_stats = kroma_rag.load_index_stats
+    original_embeddings = kroma_rag.SentenceTransformerEmbeddings
+    original_chroma = kroma_rag.Chroma
+    original_api_retrieve = kroma_api.retrieve_chunks
+    original_api_generate = kroma_api.generate_knowledge_audit
+    original_api_finalize = kroma_api.finalize_knowledge_audit
+
+    class FakeDoc:
+        def __init__(self, source: str, content: str, chunk_id: int):
+            self.page_content = content
+            self.metadata = {
+                "source": source,
+                "file_type": "txt",
+                "location_type": "document",
+                "location_label": "Document",
+                "chunk_id": chunk_id,
+                "doc_chunk_id": f"{source}:{chunk_id}",
+            }
+
+    docs = {
+        "alpha.txt": FakeDoc("alpha.txt", "FULL SECRET DOCUMENT TEXT alpha retrieval marker.", 1),
+        "beta.txt": FakeDoc("beta.txt", "FULL SECRET DOCUMENT TEXT beta retrieval marker.", 2),
+    }
+
+    class FakeEmbeddings:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeClient:
+        @staticmethod
+        def clear_system_cache():
+            return None
+
+    def allowed_sources(filter):
+        if not filter:
+            return None
+        return set(filter.get("source", {}).get("$in", []))
+
+    class FakeChroma:
+        def __init__(self, *args, **kwargs):
+            self._client = FakeClient()
+
+        def similarity_search_with_score(self, question, k=10, filter=None):
+            allowed = allowed_sources(filter)
+            question_lower = question.lower()
+            if "nomatch" in question_lower:
+                ordered = []
+            elif "beta" in question_lower:
+                ordered = [(docs["beta.txt"], 0.2)]
+            else:
+                ordered = [(docs["alpha.txt"], 0.1)]
+            return [
+                item for item in ordered
+                if allowed is None or item[0].metadata["source"] in allowed
+            ][:k]
+
+        def get(self, where=None, include=None):
+            allowed = allowed_sources(where)
+            visible = [
+                doc for doc in docs.values()
+                if allowed is None or doc.metadata["source"] in allowed
+            ]
+            return {
+                "documents": [doc.page_content for doc in visible],
+                "metadatas": [doc.metadata for doc in visible],
+            }
+
+    def trace_has_no_preview_or_text(trace: dict) -> bool:
+        trace_text = str(trace)
+        candidates = trace.get("final_candidates", [])
+        return (
+            "FULL SECRET DOCUMENT TEXT" not in trace_text
+            and "page_content" not in trace_text
+            and all("preview" not in candidate for candidate in candidates)
+        )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            kroma_rag.CHROMA_PATH = Path(temp_dir) / "chroma_db"
+            kroma_rag.CHROMA_PATH.mkdir()
+            kroma_rag.load_index_stats = lambda: {
+                "total_chunks": 2,
+                "docs": [
+                    {"name": "alpha.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "beta.txt", "file_type": "txt", "chunks": 1},
+                ],
+            }
+            kroma_rag.SentenceTransformerEmbeddings = FakeEmbeddings
+            kroma_rag.Chroma = FakeChroma
+
+            retrieve_chunks.last_trace = {"trace_id": "stale-global"}
+            alpha_context, alpha_sources, alpha_trace = retrieve_chunks("alpha marker", return_trace=True, request_id="req-alpha", endpoint="/eval")
+            beta_context, beta_sources, beta_trace = retrieve_chunks("beta marker", return_trace=True, request_id="req-beta", endpoint="/eval")
+            scoped_ok = (
+                alpha_trace.get("trace_id") != beta_trace.get("trace_id")
+                and alpha_trace.get("request_id") == "req-alpha"
+                and beta_trace.get("request_id") == "req-beta"
+                and alpha_trace.get("final_candidates", [{}])[0].get("filename") == "alpha.txt"
+                and beta_trace.get("final_candidates", [{}])[0].get("filename") == "beta.txt"
+                and alpha_sources[0]["source"] == "alpha.txt"
+                and beta_sources[0]["source"] == "beta.txt"
+                and "FULL SECRET DOCUMENT TEXT" in alpha_context
+                and "FULL SECRET DOCUMENT TEXT" in beta_context
+            )
+            if not scoped_ok:
+                failures.append(("retrieval traces are request-scoped with correct candidates", "distinct alpha/beta traces", {"alpha": alpha_trace, "beta": beta_trace}))
+                print("FAIL: retrieval traces are request-scoped with correct candidates")
+            else:
+                print("PASS: retrieval traces are request-scoped with correct candidates")
+
+            if not trace_has_no_preview_or_text(alpha_trace) or not trace_has_no_preview_or_text(beta_trace):
+                failures.append(("retrieval traces omit full document text and previews", "safe trace fields", {"alpha": alpha_trace, "beta": beta_trace}))
+                print("FAIL: retrieval traces omit full document text and previews")
+            else:
+                print("PASS: retrieval traces omit full document text and previews")
+
+            _, selected_sources, selected_trace = retrieve_chunks("beta marker", selected_docs=["beta.txt"], return_trace=True)
+            selected_ok = (
+                selected_trace.get("selected_doc_count") == 1
+                and selected_trace.get("selected_docs_redacted") == ["beta.txt"]
+                and selected_trace.get("final_candidate_count") == 1
+                and selected_sources[0]["source"] == "beta.txt"
+                and selected_trace.get("final_candidates", [{}])[0].get("filename") == "beta.txt"
+            )
+            if not selected_ok:
+                failures.append(("selected_docs appear correctly in retrieval trace", "one beta selected candidate", selected_trace))
+                print("FAIL: selected_docs appear correctly in retrieval trace")
+            else:
+                print("PASS: selected_docs appear correctly in retrieval trace")
+
+            _, no_context_sources, no_context_trace = retrieve_chunks("nomatch", return_trace=True)
+            no_context_ok = (
+                no_context_sources == []
+                and no_context_trace.get("no_context_reason") == "no_matching_chunks"
+                and no_context_trace.get("final_candidate_count") == 0
+                and no_context_trace.get("retrieval_mode") == "none"
+                and no_context_trace.get("model_called") is False
+            )
+            if not no_context_ok:
+                failures.append(("no-context retrieval trace is explicit", "reason + zero final candidates", no_context_trace))
+                print("FAIL: no-context retrieval trace is explicit")
+            else:
+                print("PASS: no-context retrieval trace is explicit")
+
+            hybrid_ok = (
+                alpha_trace.get("vector_candidate_count") == 1
+                and alpha_trace.get("keyword_candidate_count") >= 1
+                and alpha_trace.get("final_candidate_count") == 1
+                and alpha_trace.get("retrieval_mode") == "hybrid"
+                and alpha_trace.get("safe_for_client") is False
+            )
+            if not hybrid_ok:
+                failures.append(("hybrid retrieval trace has counts and mode", "vector/keyword/final + hybrid", alpha_trace))
+                print("FAIL: hybrid retrieval trace has counts and mode")
+            else:
+                print("PASS: hybrid retrieval trace has counts and mode")
+        finally:
+            kroma_rag.CHROMA_PATH = original_chroma_path
+            kroma_rag.load_index_stats = original_load_index_stats
+            kroma_rag.SentenceTransformerEmbeddings = original_embeddings
+            kroma_rag.Chroma = original_chroma
+
+    try:
+        stale_trace = {"trace_id": "stale-global"}
+        scoped_trace = {"trace_id": "scoped-request", "final_candidate_count": 1}
+        retrieve_chunks.last_trace = stale_trace
+        captured = {}
+        kroma_api.retrieve_chunks = lambda *args, **kwargs: (
+            "[Source: sample.pdf, Page 2]\nKroma is a local document-RAG assistant.",
+            [SOURCE],
+            scoped_trace,
+        )
+        kroma_api.generate_knowledge_audit = lambda *args, **kwargs: {
+            "coverage_summary": [{"area": "Kroma", "source_ids": ["s1"]}],
+            "risk_areas": [],
+            "contradictions": [],
+            "automation_readiness": [],
+            "sources_used": ["s1"],
+        }
+
+        def capture_finalize(result, source_context, source_catalog, sources, retrieval_trace):
+            captured["trace"] = retrieval_trace
+            return {"retrieval_confidence": {"level": "High", "score": 90, "notes": []}}
+
+        kroma_api.finalize_knowledge_audit = capture_finalize
+        fake_request = SimpleNamespace(headers={}, client=SimpleNamespace(host="trace-eval"))
+        response = kroma_api.knowledge_audit(kroma_api.KnowledgeAuditRequest(), request=fake_request)
+        api_trace_ok = response.get("result", {}).get("retrieval_confidence", {}).get("score") == 90 and captured.get("trace") is scoped_trace
+        if not api_trace_ok:
+            failures.append(("knowledge audit uses request-scoped trace, not stale last_trace", "scoped trace", captured.get("trace")))
+            print("FAIL: knowledge audit uses request-scoped trace, not stale last_trace")
+        else:
+            print("PASS: knowledge audit uses request-scoped trace, not stale last_trace")
+    finally:
+        kroma_api.retrieve_chunks = original_api_retrieve
+        kroma_api.generate_knowledge_audit = original_api_generate
+        kroma_api.finalize_knowledge_audit = original_api_finalize
 
 
 def run_demo_key_evals(failures: list) -> None:
@@ -2063,6 +2268,7 @@ def main() -> int:
     run_delete_index_evals(failures)
     run_deleted_only_query_eval(failures)
     run_multifile_selected_docs_evals(failures)
+    run_retrieval_trace_evals(failures)
     run_hybrid_retrieval_evals(failures)
     run_demo_key_evals(failures)
     run_groq_rate_limit_evals(failures)

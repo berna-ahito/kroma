@@ -409,6 +409,52 @@ def _validate_chat_request(req: ChatRequest) -> tuple[str, list, list]:
     return question, _validate_history(req.history), _validate_selected_docs(req.selected_docs)
 
 
+def _request_trace_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    supplied = request.headers.get("x-request-id") or request.headers.get("X-Request-ID")
+    if not supplied:
+        return uuid.uuid4().hex
+    cleaned = re.sub(r"[^A-Za-z0-9._:-]+", "", supplied.strip())[:128]
+    return cleaned or uuid.uuid4().hex
+
+
+def _unpack_retrieval_result(result) -> tuple[str, list, dict | None]:
+    if isinstance(result, tuple) and len(result) == 3:
+        context, sources, trace = result
+        return context, sources, trace if isinstance(trace, dict) else None
+    if isinstance(result, tuple) and len(result) >= 2:
+        return result[0], result[1], None
+    return "", [], None
+
+
+def _retrieve_chunks_with_trace(
+    question: str,
+    *,
+    request: Request | None,
+    endpoint: str,
+    n_results: int = 10,
+    selected_docs: list | None = None,
+) -> tuple[str, list, dict | None]:
+    result = retrieve_chunks(
+        question,
+        n_results=n_results,
+        selected_docs=selected_docs,
+        return_trace=True,
+        request_id=_request_trace_id(request),
+        endpoint=endpoint,
+    )
+    return _unpack_retrieval_result(result)
+
+
+def _mark_model_called(trace: dict | None, called: bool, no_context_reason: str | None = None) -> None:
+    if not isinstance(trace, dict):
+        return
+    trace["model_called"] = called
+    if no_context_reason and not trace.get("no_context_reason"):
+        trace["no_context_reason"] = no_context_reason
+
+
 def _validate_study_count(count: int, label: str) -> int:
     if isinstance(count, bool) or not isinstance(count, int):
         raise HTTPException(400, f"{label} count must be an integer.")
@@ -619,10 +665,17 @@ def chat(req: ChatRequest, request: Request = None):
         _require_demo_key(request)
         _enforce_groq_rate_limit(request)
     question, history, selected_docs = _validate_chat_request(req)
-    context, sources = retrieve_chunks(question, selected_docs=selected_docs)
+    context, sources, retrieval_trace = _retrieve_chunks_with_trace(
+        question,
+        request=request,
+        endpoint="/api/chat",
+        selected_docs=selected_docs,
+    )
     if not context.strip():
+        _mark_model_called(retrieval_trace, False, "no_retrieved_context")
         return {"answer": MISSING_CONTEXT_ANSWER, "sources": [], "show_sources": False}
     answer = generate_answer(question, context, history)
+    _mark_model_called(retrieval_trace, True)
     show_sources = should_show_sources(question, answer, context, sources)
     return {"answer": answer, "sources": sources, "show_sources": show_sources}
 
@@ -690,14 +743,22 @@ def business_copilot(req: BusinessCopilotRequest, request: Request):
         raise HTTPException(400, "request is limited to 2000 characters.")
 
     selected_docs = _validate_selected_docs(req.selected_docs)
-    context, sources = retrieve_chunks(request_text, n_results=15, selected_docs=selected_docs)
+    context, sources, retrieval_trace = _retrieve_chunks_with_trace(
+        request_text,
+        request=request,
+        endpoint="/api/business-copilot",
+        n_results=15,
+        selected_docs=selected_docs,
+    )
     source_catalog = build_source_catalog(sources) if sources else []
     source_context = build_source_linked_context(context, source_catalog) if context and source_catalog else ""
 
     if not business_context_is_relevant(sources):
+        _mark_model_called(retrieval_trace, False, "no_relevant_business_context")
         return BUSINESS_NO_CONTEXT_RESPONSE
 
     raw = generate_business_copilot_output(task_type, audience, request_text, source_context, source_catalog)
+    _mark_model_called(retrieval_trace, True)
     normalized = normalize_business_copilot_output(raw)
     sanitized = sanitize_business_copilot_source_ids(normalized, source_catalog)
 
@@ -759,17 +820,24 @@ def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
     _require_demo_key(request)
     _enforce_groq_rate_limit(request)
     selected_docs = _validate_selected_docs(req.selected_docs)
-    context, sources = retrieve_chunks("overview summary key topics policies terms procedures guidelines", n_results=20, selected_docs=selected_docs)
+    context, sources, retrieval_trace = _retrieve_chunks_with_trace(
+        "overview summary key topics policies terms procedures guidelines",
+        request=request,
+        endpoint="/api/knowledge-audit",
+        n_results=20,
+        selected_docs=selected_docs,
+    )
 
     source_catalog = build_source_catalog(sources) if sources else []
     source_context = build_source_linked_context(context, source_catalog) if context and source_catalog else ""
 
     if not business_context_is_relevant(sources):
+        _mark_model_called(retrieval_trace, False, "no_relevant_knowledge_context")
         return KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE
 
     raw = generate_knowledge_audit(source_context, source_catalog)
+    _mark_model_called(retrieval_trace, True)
     normalized = normalize_knowledge_audit_output(raw)
-    retrieval_trace = getattr(retrieve_chunks, "last_trace", None)
     sanitized = finalize_knowledge_audit(normalized, source_context, source_catalog, sources, retrieval_trace)
 
     return {"result": sanitized, "sources": source_catalog}

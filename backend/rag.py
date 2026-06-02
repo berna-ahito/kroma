@@ -1,6 +1,8 @@
 import gc
+import hashlib
 import os
 import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
@@ -82,6 +84,114 @@ UNGROUNDED_ANSWER_RE = re.compile(
 def _emit(progress_callback: Callable | None, event: str, payload: dict | None = None) -> None:
     if progress_callback:
         progress_callback(event, payload or {})
+
+
+def _safe_trace_text(value, max_chars: int = 120) -> str:
+    text = str(value or "").replace("\x00", "")
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:10]
+    return f"{text[:max_chars]}...#{digest}"
+
+
+def _safe_trace_filename(value) -> str:
+    return _safe_trace_text(Path(str(value or "unknown")).name, 96)
+
+
+def _new_retrieval_trace(
+    question: str,
+    selected_docs: list | None,
+    indexed_docs: set[str] | None,
+    endpoint: str | None = None,
+    request_id: str | None = None,
+) -> dict:
+    trace_id = uuid.uuid4().hex
+    selected_doc_names = [Path(str(name)).name for name in selected_docs] if selected_docs else []
+    return {
+        "trace_id": trace_id,
+        "request_id": _safe_trace_text(request_id, 128) if request_id else trace_id,
+        "endpoint": _safe_trace_text(endpoint, 128) if endpoint else None,
+        "query_redacted": "[redacted]",
+        "query_length": len(question or ""),
+        "selected_doc_count": len(selected_doc_names),
+        "selected_docs_redacted": [_safe_trace_filename(name) for name in selected_doc_names],
+        "indexed_doc_count": len(indexed_docs or set()),
+        "vector_candidate_count": 0,
+        "keyword_candidate_count": 0,
+        "final_candidate_count": 0,
+        "final_candidates": [],
+        "vector_latency_ms": 0.0,
+        "keyword_latency_ms": 0.0,
+        "fusion_latency_ms": 0.0,
+        "total_retrieval_latency_ms": 0.0,
+        "no_context_reason": None,
+        "retrieval_mode": "none",
+        "safe_for_client": False,
+    }
+
+
+def _trace_source_id(source: dict, rank: int) -> str:
+    source_id = source.get("doc_chunk_id") or source.get("chunk_id") or f"{source.get('source', 'unknown')}:{rank}"
+    return _safe_trace_text(source_id, 140)
+
+
+def _trace_candidate(source: dict) -> dict:
+    return {
+        "source_id": _trace_source_id(source, source.get("rank", 0)),
+        "filename": _safe_trace_filename(source.get("source")),
+        "location_label": _safe_trace_text(source.get("location_label"), 80),
+        "vector_rank": source.get("vector_rank"),
+        "keyword_rank": source.get("keyword_rank"),
+        "fused_score": source.get("fused_score"),
+        "retrieval_methods": list(source.get("retrieval_methods") or []),
+        "score": source.get("score"),
+        "exact_terms": [_safe_trace_text(term, 60) for term in (source.get("exact_terms") or [])],
+    }
+
+
+def _retrieval_mode(trace: dict) -> str:
+    final_candidates = trace.get("final_candidates") or []
+    if not final_candidates:
+        return "none"
+    methods = {
+        method
+        for candidate in final_candidates
+        for method in candidate.get("retrieval_methods", [])
+    }
+    if "vector" in methods and "keyword" in methods:
+        return "hybrid"
+    if "vector" in methods:
+        return "vector"
+    if "keyword" in methods:
+        return "keyword"
+    return "none"
+
+
+def _finish_retrieval_trace(
+    trace: dict,
+    started_at: float,
+    progress_callback: Callable | None,
+    no_context_reason: str | None = None,
+) -> dict:
+    if no_context_reason:
+        trace["no_context_reason"] = no_context_reason
+        trace.setdefault("model_called", False)
+    trace["final_candidate_count"] = len(trace.get("final_candidates") or [])
+    trace["retrieval_mode"] = _retrieval_mode(trace)
+    trace["total_retrieval_latency_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+    # Deprecated compatibility only. Endpoint logic must use the request-scoped
+    # trace returned from retrieve_chunks(..., return_trace=True).
+    retrieve_chunks.last_trace = trace
+    _emit(progress_callback, "trace", trace)
+    return trace
+
+
+def _retrieval_return(context: str, sources: list, trace: dict, return_trace: bool):
+    if return_trace:
+        return context, sources, trace
+    return context, sources
 
 
 def _confidence_from_distance(distance: float) -> int:
@@ -278,24 +388,35 @@ def _source_from_fused_candidate(candidate: dict, rank: int) -> dict | None:
     }
 
 
-def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Callable | None = None, selected_docs: list | None = None):
+def retrieve_chunks(
+    question: str,
+    n_results: int = 10,
+    progress_callback: Callable | None = None,
+    selected_docs: list | None = None,
+    return_trace: bool = False,
+    request_id: str | None = None,
+    endpoint: str | None = None,
+):
     """
     Search the vector store for relevant chunks.
 
     Returns (context_str, sources). Each source has source, location labels,
     chunk ids, score, distance, and preview fields for UI display.
     """
-    if not CHROMA_PATH.exists():
-        _emit(progress_callback, "missing_index", {"message": "No local vector index found."})
-        return "", []
     started_at = time.perf_counter()
-
     stats = load_index_stats() or {}
     indexed_docs = {
         doc.get("name")
         for doc in stats.get("docs", [])
         if isinstance(doc, dict) and doc.get("name")
     }
+    trace = _new_retrieval_trace(question, selected_docs, indexed_docs, endpoint=endpoint, request_id=request_id)
+
+    if not CHROMA_PATH.exists():
+        _emit(progress_callback, "missing_index", {"message": "No local vector index found."})
+        _finish_retrieval_trace(trace, started_at, progress_callback, "missing_index")
+        return _retrieval_return("", [], trace, return_trace)
+
     _emit(
         progress_callback,
         "prepare",
@@ -312,7 +433,8 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         filtered_docs = sorted(requested_docs & indexed_docs) if indexed_docs else sorted(requested_docs)
         if not filtered_docs:
             _emit(progress_callback, "empty", {"message": "No selected documents are indexed."})
-            return "", []
+            _finish_retrieval_trace(trace, started_at, progress_callback, "no_selected_documents_indexed")
+            return _retrieval_return("", [], trace, return_trace)
         search_filter = {"source": {"$in": filtered_docs}}
     elif indexed_docs:
         search_filter = {"source": {"$in": sorted(indexed_docs)}}
@@ -323,6 +445,7 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     candidate_limit = max(n_results * 4, KEYWORD_CANDIDATE_FLOOR)
     _emit(progress_callback, "search", {"message": "Query embedded. Searching nearest chunks."})
     try:
+        vector_started_at = time.perf_counter()
         if search_filter:
             vector_results = vectorstore.similarity_search_with_score(
                 question, k=candidate_limit,
@@ -330,10 +453,16 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
             )
         else:
             vector_results = vectorstore.similarity_search_with_score(question, k=candidate_limit)
+        trace["vector_latency_ms"] = round((time.perf_counter() - vector_started_at) * 1000, 2)
+        trace["vector_candidate_count"] = len(vector_results)
+        keyword_started_at = time.perf_counter()
         keyword_results = _keyword_candidates(vectorstore, question, search_filter, indexed_docs, candidate_limit)
+        trace["keyword_latency_ms"] = round((time.perf_counter() - keyword_started_at) * 1000, 2)
+        trace["keyword_candidate_count"] = len(keyword_results)
     except Exception as exc:
         _emit(progress_callback, "error", {"message": str(exc)})
-        return "", []
+        _finish_retrieval_trace(trace, started_at, progress_callback, "retrieval_error")
+        return _retrieval_return("", [], trace, return_trace)
     finally:
         try:
             vectorstore._client.clear_system_cache()
@@ -342,11 +471,14 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         del vectorstore
         gc.collect()
 
+    fusion_started_at = time.perf_counter()
     fused_results = _fuse_candidates(vector_results, keyword_results, n_results)
+    trace["fusion_latency_ms"] = round((time.perf_counter() - fusion_started_at) * 1000, 2)
 
     if not fused_results:
         _emit(progress_callback, "empty", {"message": "No chunks matched the question."})
-        return "", []
+        _finish_retrieval_trace(trace, started_at, progress_callback, "no_matching_chunks")
+        return _retrieval_return("", [], trace, return_trace)
 
     context_parts = []
     sources = []
@@ -364,25 +496,17 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         )
 
         sources.append(source)
+        trace["final_candidates"].append(_trace_candidate(source))
         _emit(progress_callback, "candidate", source)
 
     if not context_parts:
         _emit(progress_callback, "empty", {"message": "No usable chunks matched the question."})
-        return "", []
+        _finish_retrieval_trace(trace, started_at, progress_callback, "no_usable_chunks")
+        return _retrieval_return("", [], trace, return_trace)
 
-    trace = {
-        "query": question,
-        "selected_docs": [Path(name).name for name in selected_docs] if selected_docs else [],
-        "vector_candidate_count": len(vector_results),
-        "keyword_candidate_count": len(keyword_results),
-        "final_candidate_count": len(sources),
-        "top_final_source_ids": [source.get("source") for source in sources[:5]],
-        "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
-    }
-    retrieve_chunks.last_trace = trace
-    _emit(progress_callback, "trace", trace)
+    _finish_retrieval_trace(trace, started_at, progress_callback)
     _emit(progress_callback, "complete", {"matches": len(sources)})
-    return "\n\n".join(context_parts), sources
+    return _retrieval_return("\n\n".join(context_parts), sources, trace, return_trace)
 
 
 def should_show_sources(question: str, answer: str, context: str, sources: list) -> bool:
