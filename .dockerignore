@@ -32,3 +32,6 @@ Thumbs.db
 *~
 .ruff_cache/
 .mypy_cache/
+
+.codex/
+.agents/
