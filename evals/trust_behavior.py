@@ -1679,7 +1679,10 @@ def run_knowledge_audit_evals(failures: list) -> None:
     from backend.rag import (
         sanitize_knowledge_audit_source_ids,
         normalize_knowledge_audit_output,
-        compute_readiness_verdict
+        compute_readiness_verdict,
+        detect_possible_contradictions,
+        finalize_knowledge_audit,
+        infer_missing_required_documents,
     )
     ka_sources = [{"id": "s1", "source": "doc1.pdf", "score": 91}]
     ka_payload = {
@@ -1705,6 +1708,23 @@ def run_knowledge_audit_evals(failures: list) -> None:
         print("FAIL: knowledge audit invalid sources_used stripped")
     else:
         print("PASS: knowledge audit invalid sources_used stripped")
+
+    ka_v2_payload = normalize_knowledge_audit_output({
+        "coverage": [{"area": "Hiring requirements", "source_ids": ["s1", "s404"]}],
+        "contradictions": [{"status": "possible", "area": "Price", "detail": "Conflict", "source_ids": ["s1", "s404"]}],
+        "sources_used": ["s1", "s404"],
+    })
+    sanitized_v2 = sanitize_knowledge_audit_source_ids(ka_v2_payload, ka_sources)
+    if sanitized_v2["coverage"] != [{"area": "Hiring requirements", "source_ids": ["s1"]}]:
+        failures.append(("knowledge audit v2 invalid source IDs removed from coverage alias", "s1 only", sanitized_v2["coverage"]))
+        print("FAIL: knowledge audit v2 invalid source IDs removed from coverage alias")
+    else:
+        print("PASS: knowledge audit v2 invalid source IDs removed from coverage alias")
+    if sanitized_v2["contradictions"] != [{"status": "possible", "area": "Price", "detail": "Conflict", "source_ids": ["s1"]}]:
+        failures.append(("knowledge audit v2 invalid source IDs removed from contradictions", "s1 only", sanitized_v2["contradictions"]))
+        print("FAIL: knowledge audit v2 invalid source IDs removed from contradictions")
+    else:
+        print("PASS: knowledge audit v2 invalid source IDs removed from contradictions")
 
     v_low_coverage = compute_readiness_verdict({"coverage_summary": [{"area": "A"}], "risk_areas": [], "missing_knowledge": []})
     if v_low_coverage["level"] != "Low":
@@ -1740,6 +1760,81 @@ def run_knowledge_audit_evals(failures: list) -> None:
         print("FAIL: knowledge audit readiness verdict Medium otherwise")
     else:
         print("PASS: knowledge audit readiness verdict Medium otherwise")
+
+    job_context = "[Source ID: s1]\nRole: AI engineer. Candidate qualifications include Python and retrieval experience."
+    missing_docs = infer_missing_required_documents(job_context)
+    expected_job_gaps = {"Company and team context", "Project examples or work-sample expectations"}
+    if not expected_job_gaps.issubset(set(missing_docs)):
+        failures.append(("knowledge audit job-post-like missing required documents inferred", expected_job_gaps, missing_docs))
+        print("FAIL: knowledge audit job-post-like missing required documents inferred")
+    else:
+        print("PASS: knowledge audit job-post-like missing required documents inferred")
+
+    conflict_context = (
+        "[Source ID: s1]\n"
+        "Refund policy price: $10 per month. Launch date: June 1, 2026. Refund policy status: active.\n\n"
+        "[Source ID: s2]\n"
+        "Refund policy price: $20 per month. Launch date: June 15, 2026. Refund policy status: inactive."
+    )
+    conflict_sources = [{"id": "s1", "source": "policy-a.md", "score": 90}, {"id": "s2", "source": "policy-b.md", "score": 88}]
+    contradictions = detect_possible_contradictions(conflict_context, conflict_sources)
+    found_types = {item.get("type") for item in contradictions}
+    if not {"price", "date", "status"}.issubset(found_types):
+        failures.append(("knowledge audit possible contradiction detection catches conflicting prices dates statuses", "price/date/status", contradictions))
+        print("FAIL: knowledge audit possible contradiction detection catches conflicting prices dates statuses")
+    else:
+        print("PASS: knowledge audit possible contradiction detection catches conflicting prices dates statuses")
+
+    low_due_to_gaps = compute_readiness_verdict(
+        {
+            "coverage_summary": [{"area": "A", "source_ids": ["s1"]}, {"area": "B", "source_ids": ["s1"]}, {"area": "C", "source_ids": ["s1"]}],
+            "risk_areas": [],
+            "missing_knowledge": ["Gap 1", "Gap 2"],
+            "missing_required_documents": ["Doc 1", "Doc 2", "Doc 3"],
+            "contradictions": [{"status": "possible", "source_ids": ["s1", "s2"]}],
+            "sources_used": ["s1"],
+        },
+        conflict_context,
+        conflict_sources,
+        {"score": 80},
+    )
+    if low_due_to_gaps["level"] != "Low" or low_due_to_gaps["score"] >= 45:
+        failures.append(("knowledge audit readiness score/verdict drops for many gaps or contradictions", "Low under 45", low_due_to_gaps))
+        print("FAIL: knowledge audit readiness score/verdict drops for many gaps or contradictions")
+    else:
+        print("PASS: knowledge audit readiness score/verdict drops for many gaps or contradictions")
+
+    audience_readiness = compute_readiness_verdict(
+        {
+            "coverage_summary": [{"area": "A", "source_ids": ["s1"]}, {"area": "B", "source_ids": ["s1"]}, {"area": "C", "source_ids": ["s1"]}],
+            "risk_areas": [{"area": "Pricing", "detail": "External pricing risk", "source_ids": ["s1"]}],
+            "missing_knowledge": ["One gap"],
+            "missing_required_documents": [],
+            "contradictions": [],
+            "sources_used": ["s1"],
+        },
+        "[Source ID: s1]\nPricing policy for customer support.",
+        ka_sources,
+        {"score": 80},
+    )
+    if audience_readiness["internal_use"]["score"] <= audience_readiness["external_customer_facing"]["score"]:
+        failures.append(("knowledge audit internal readiness can be higher than external readiness when risks exist", "internal > external", audience_readiness))
+        print("FAIL: knowledge audit internal readiness can be higher than external readiness when risks exist")
+    else:
+        print("PASS: knowledge audit internal readiness can be higher than external readiness when risks exist")
+
+    finalized_job = finalize_knowledge_audit(
+        {"coverage_summary": [{"area": "Role requirements", "source_ids": ["s1"]}], "sources_used": ["s1"]},
+        job_context,
+        ka_sources,
+        [{"source": "job.md", "score": 90, "retrieval_methods": ["vector", "keyword"], "exact_terms": ["role"]}],
+        {"final_candidate_count": 1},
+    )
+    if not finalized_job.get("missing_required_documents") or finalized_job.get("readiness_verdict", {}).get("level") != "Low":
+        failures.append(("knowledge audit finalizer adds missing docs and Low readiness for thin job post", "missing docs + Low", finalized_job))
+        print("FAIL: knowledge audit finalizer adds missing docs and Low readiness for thin job post")
+    else:
+        print("PASS: knowledge audit finalizer adds missing docs and Low readiness for thin job post")
 
     norm_empty = normalize_knowledge_audit_output({})
     if "coverage_summary" not in norm_empty:

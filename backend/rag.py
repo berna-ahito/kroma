@@ -33,6 +33,26 @@ STOPWORDS = {
     "its", "of", "on", "or", "say", "says", "the", "to", "what", "when",
     "where", "which", "who", "why", "with",
 }
+EXTERNAL_RISK_TERMS_RE = re.compile(
+    r"\b("
+    r"pricing?|refunds?|legal|compliance|finance|medical|clinical|claims?|"
+    r"contract|warranty|guarantee|customer|external|public|policy|terms?"
+    r")\b",
+    re.IGNORECASE,
+)
+PRICE_RE = re.compile(r"(?:\$|usd\s*)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:usd|dollars?)", re.IGNORECASE)
+DATE_RE = re.compile(
+    r"\b(?:\d{4}-\d{1,2}-\d{1,2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}/\d{1,2}/\d{2,4})\b",
+    re.IGNORECASE,
+)
+STATUS_GROUPS = {
+    "available": {"available", "enabled", "active", "open", "approved", "included", "supported", "allowed"},
+    "unavailable": {"unavailable", "disabled", "inactive", "closed", "rejected", "excluded", "unsupported", "not allowed"},
+}
+STATUS_RE = re.compile(
+    r"\b(available|unavailable|enabled|disabled|active|inactive|open|closed|approved|rejected|included|excluded|supported|unsupported|allowed|not allowed)\b",
+    re.IGNORECASE,
+)
 
 
 SMALL_TALK_RE = re.compile(
@@ -1139,22 +1159,279 @@ def generate_flashcards(context: str, count: int = 8, source_ids: list | None = 
     return _parse_json_array_response(response.choices[0].message.content)
 
 
-def compute_readiness_verdict(result: dict, source_context: str = "") -> dict:
+def _knowledge_audit_source_blocks(source_context: str) -> list[dict]:
+    blocks = []
+    pattern = re.compile(r"\[Source ID: ([^\]]+)\]\s*(.*?)(?=\n\n\[Source ID: |\Z)", re.DOTALL)
+    for match in pattern.finditer(source_context or ""):
+        sid = match.group(1).strip()
+        text = match.group(2).strip()
+        if sid and text:
+            blocks.append({"source_id": sid, "text": text})
+    return blocks
+
+
+def _sentence_parts(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text or "")
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def _fact_key_terms(sentence: str) -> set[str]:
+    label_match = re.match(r"^\s*([A-Za-z][A-Za-z0-9 /_-]{1,60})\s*[:=-]\s*", sentence or "")
+    source = label_match.group(1) if label_match else sentence
+    terms = []
+    for term in _tokenize(source):
+        if term in STOPWORDS or len(term) < 3:
+            continue
+        if PRICE_RE.fullmatch(term) or DATE_RE.fullmatch(term):
+            continue
+        if term in {"usd", "dollar", "dollars"}:
+            continue
+        terms.append(term)
+    return set(terms[:8])
+
+
+def _normalize_price(value: str) -> str:
+    number = re.sub(r"[^\d.]", "", value or "")
+    return number.rstrip("0").rstrip(".") if "." in number else number
+
+
+def _normalize_date(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _normalize_status(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    for group, terms in STATUS_GROUPS.items():
+        if normalized in terms:
+            return group
+    return normalized
+
+
+def _extract_comparable_facts(source_context: str) -> list[dict]:
+    facts = []
+    for block in _knowledge_audit_source_blocks(source_context):
+        sid = block["source_id"]
+        for sentence in _sentence_parts(block["text"]):
+            terms = _fact_key_terms(sentence)
+            if len(terms) < 2:
+                continue
+            for match in PRICE_RE.finditer(sentence):
+                facts.append({"type": "price", "value": _normalize_price(match.group(0)), "terms": terms, "source_id": sid, "text": sentence})
+            for match in DATE_RE.finditer(sentence):
+                facts.append({"type": "date", "value": _normalize_date(match.group(0)), "terms": terms, "source_id": sid, "text": sentence})
+            for match in STATUS_RE.finditer(sentence):
+                facts.append({"type": "status", "value": _normalize_status(match.group(0)), "terms": terms, "source_id": sid, "text": sentence})
+    return facts
+
+
+def detect_possible_contradictions(source_context: str, source_catalog: list | None = None, limit: int = 5) -> list[dict]:
+    valid_ids = _valid_source_ids(source_catalog) if source_catalog else None
+    facts = _extract_comparable_facts(source_context)
+    contradictions = []
+    seen = set()
+    for idx, left in enumerate(facts):
+        for right in facts[idx + 1:]:
+            if left["source_id"] == right["source_id"]:
+                continue
+            if valid_ids is not None and (left["source_id"] not in valid_ids or right["source_id"] not in valid_ids):
+                continue
+            if left["type"] != right["type"] or left["value"] == right["value"]:
+                continue
+            shared = sorted(left["terms"] & right["terms"])
+            if len(shared) < 2:
+                continue
+            key = (left["type"], tuple(sorted((left["source_id"], right["source_id"]))), tuple(shared[:4]))
+            if key in seen:
+                continue
+            seen.add(key)
+            topic = " ".join(shared[:4])
+            contradictions.append(
+                {
+                    "status": "possible",
+                    "type": left["type"],
+                    "area": topic.title() if topic else left["type"].title(),
+                    "detail": f"Possible conflicting {left['type']} values found for similar terms.",
+                    "source_ids": [left["source_id"], right["source_id"]],
+                }
+            )
+            if len(contradictions) >= limit:
+                return contradictions
+    return contradictions
+
+
+def infer_missing_required_documents(source_context: str) -> list[str]:
+    text = (source_context or "").lower()
+    suggestions = []
+
+    def missing_any(terms: tuple[str, ...]) -> bool:
+        return not any(term in text for term in terms)
+
+    job_like = re.search(r"\b(job|role|candidate|hire|hiring|qualification|interview|resume|portfolio)\b", text)
+    if job_like:
+        if missing_any(("company", "mission", "culture", "team", "department")):
+            suggestions.append("Company and team context")
+        if missing_any(("project example", "sample project", "portfolio", "case study", "work sample")):
+            suggestions.append("Project examples or work-sample expectations")
+        if missing_any(("evaluation", "criteria", "rubric", "scorecard")):
+            suggestions.append("Evaluation criteria or interview scorecard")
+        if missing_any(("interview process", "interview stage", "timeline", "next steps")):
+            suggestions.append("Interview process and hiring timeline")
+
+    support_like = re.search(r"\b(customer|support|service|refund|pricing|price|subscription|escalation)\b", text)
+    if support_like:
+        if missing_any(("price", "pricing", "$", "cost", "subscription")):
+            suggestions.append("Pricing or plan details")
+        if missing_any(("refund", "return", "cancellation", "cancel")):
+            suggestions.append("Refund, return, or cancellation policy")
+        if missing_any(("scope", "service includes", "included", "not included")):
+            suggestions.append("Service scope and exclusions")
+        if missing_any(("escalation", "manager", "priority", "urgent")):
+            suggestions.append("Escalation process")
+
+    study_like = re.search(r"\b(study|lesson|course|chapter|student|learning|exam|quiz|assessment)\b", text)
+    if study_like:
+        if missing_any(("example", "sample", "case study")):
+            suggestions.append("Worked examples")
+        if missing_any(("definition", "glossary", "terms")):
+            suggestions.append("Definitions or glossary")
+        if missing_any(("question", "quiz", "assessment", "exercise")):
+            suggestions.append("Assessment questions or practice exercises")
+
+    result = []
+    for item in suggestions:
+        if item not in result:
+            result.append(item)
+    return result
+
+
+def compute_retrieval_confidence(sources: list | None, trace: dict | None = None) -> dict:
+    sources = sources if isinstance(sources, list) else []
+    final_count = len(sources)
+    source_names = {source.get("source") for source in sources if isinstance(source, dict) and source.get("source")}
+    keyword_hits = sum(
+        1 for source in sources
+        if isinstance(source, dict) and (
+            "keyword" in (source.get("retrieval_methods") or [])
+            or source.get("retrieval_method") == "keyword"
+            or source.get("exact_terms")
+        )
+    )
+    scores = [int(source.get("score", 0)) for source in sources if isinstance(source, dict)]
+    avg_score = sum(scores) / len(scores) if scores else 0
+
+    score = min(100, round((final_count * 4) + (len(source_names) * 10) + (keyword_hits * 4) + (avg_score * 0.45)))
+    if final_count == 0:
+        score = 0
+    level = "High" if score >= 75 else "Medium" if score >= 45 else "Low"
+
+    notes = []
+    if final_count:
+        notes.append(f"{final_count} retrieved chunks across {len(source_names)} source document(s)")
+    else:
+        notes.append("No retrieved source chunks")
+    if keyword_hits:
+        notes.append("Exact-term retrieval contributed to the result")
+    if trace and isinstance(trace, dict):
+        notes.append(f"Hybrid retrieval returned {trace.get('final_candidate_count', final_count)} final candidate(s)")
+    return {"level": level, "score": score, "notes": notes}
+
+
+def _readiness_level(score: int) -> str:
+    if score >= 75:
+        return "High"
+    if score >= 45:
+        return "Medium"
+    return "Low"
+
+
+def _unique_text_count(*values) -> int:
+    seen = set()
+    for value in values:
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            normalized = re.sub(r"\s+", " ", str(item).strip().lower())
+            if normalized:
+                seen.add(normalized)
+    return len(seen)
+
+
+def compute_readiness_verdict(
+    result: dict,
+    source_context: str = "",
+    source_catalog: list | None = None,
+    retrieval_confidence: dict | None = None,
+) -> dict:
     coverage = len(result.get("coverage_summary", []))
     risks = len(result.get("risk_areas", []))
-    missing = len(result.get("missing_knowledge", []))
+    missing = _unique_text_count(result.get("missing_knowledge", []), result.get("missing_information", []))
+    missing_required = len(result.get("missing_required_documents", []))
+    contradictions = len(result.get("contradictions", []))
+    sources_used = result.get("sources_used", [])
+    valid_source_context = source_context.strip() if isinstance(source_context, str) else ""
+    referenced_source_ids = set(sources_used if isinstance(sources_used, list) else [])
+    for field in ("coverage_summary", "risk_areas", "contradictions"):
+        for item in result.get(field, []):
+            if isinstance(item, dict):
+                referenced_source_ids.update(item.get("source_ids", []))
+    if source_catalog is not None:
+        valid_ids = _valid_source_ids(source_catalog)
+        has_valid_sources = bool(referenced_source_ids & valid_ids)
+    else:
+        has_valid_sources = bool(valid_source_context or referenced_source_ids or coverage)
 
+    reasons = []
     if coverage < 2:
-        return {"level": "Low", "reasons": ["Insufficient knowledge coverage"]}
+        reasons.append("Insufficient knowledge coverage")
+    if not has_valid_sources:
+        reasons.append("No source-grounded context available")
     if risks >= 3:
-        return {"level": "Low", "reasons": ["Too many risk areas identified"]}
+        reasons.append("Too many risk areas identified")
     if missing >= 3:
-        return {"level": "Low", "reasons": ["Too much missing knowledge"]}
+        reasons.append("Too much missing knowledge")
+    if missing_required >= 3:
+        reasons.append("Several required supporting documents appear to be missing")
+    if contradictions:
+        reasons.append("Possible contradictions need review")
 
-    if coverage >= 4 and risks == 0 and missing <= 1:
-        return {"level": "High", "reasons": ["Excellent coverage with minimal risks and gaps"]}
+    score = 55 + min(25, coverage * 6)
+    score -= min(35, risks * 10)
+    score -= min(30, missing * 7)
+    score -= min(25, missing_required * 6)
+    score -= min(30, contradictions * 12)
+    if retrieval_confidence and isinstance(retrieval_confidence, dict):
+        confidence_score = int(retrieval_confidence.get("score", 0) or 0)
+        if confidence_score < 45:
+            score -= 15
+        elif confidence_score >= 75:
+            score += 5
+    if coverage < 2 or not has_valid_sources:
+        score = min(score, 35)
 
-    return {"level": "Medium", "reasons": ["Adequate knowledge coverage but some gaps or risks exist"]}
+    score = max(0, min(100, round(score)))
+    level = _readiness_level(score)
+    if coverage < 2 or not has_valid_sources or risks >= 3 or missing >= 3:
+        level = "Low"
+        score = min(score, 44)
+    elif coverage >= 4 and risks == 0 and missing <= 1 and missing_required <= 1 and contradictions == 0:
+        level = "High"
+        score = max(score, 75)
+
+    if not reasons:
+        reasons.append("Adequate knowledge coverage with limited known gaps")
+
+    external_penalty = 15 if (risks or contradictions or EXTERNAL_RISK_TERMS_RE.search(source_context or "")) else 5
+    external_score = max(0, score - external_penalty)
+    automation_score = max(0, score - (20 if risks or missing or missing_required or contradictions else 5))
+
+    return {
+        "level": level,
+        "score": score,
+        "reasons": reasons,
+        "internal_use": {"level": _readiness_level(score), "score": score},
+        "external_customer_facing": {"level": _readiness_level(external_score), "score": external_score},
+        "automation": {"level": _readiness_level(automation_score), "score": automation_score},
+    }
 
 
 def generate_knowledge_audit(source_context: str, source_catalog: list) -> dict:
@@ -1169,14 +1446,20 @@ def generate_knowledge_audit(source_context: str, source_catalog: list) -> dict:
                 "Use ONLY these source IDs in your response. Never invent source IDs. "
                 "Format: {"
                 "\"coverage_summary\": [{\"area\": \"...\", \"source_ids\": [\"s1\"]}], "
+                "\"coverage\": [{\"area\": \"...\", \"source_ids\": [\"s1\"]}], "
                 "\"missing_knowledge\": [\"...\"], "
+                "\"missing_information\": [\"...\"], "
+                "\"missing_required_documents\": [\"...\"], "
                 "\"risk_areas\": [{\"area\": \"...\", \"detail\": \"...\", \"source_ids\": [\"s1\"]}], "
+                "\"contradictions\": [{\"status\": \"possible\", \"area\": \"...\", \"detail\": \"...\", \"source_ids\": [\"s1\", \"s2\"]}], "
                 "\"suggested_next_documents\": [\"...\"], "
+                "\"recommended_next_documents\": [\"...\"], "
                 "\"automation_readiness\": [{\"category\": \"Safe to answer from sources\", \"items\": [\"...\"]}], "
                 "\"sources_used\": [\"s1\"]"
                 "} "
                 "Avoid claiming coverage unless supported by source IDs. "
                 "Include missing information when docs are weak. "
+                "Keep contradiction claims conservative and label uncertain conflicts as possible. "
                 "Flag risk areas: pricing, legal, finance, investor claims, scientific claims, medical claims, product claims, commercial terms, HR, complaints, refunds, negotiations. "
                 "sources_used should list all source IDs that were actually used."
             ),
@@ -1202,14 +1485,19 @@ def normalize_knowledge_audit_output(payload) -> dict:
         payload = {}
     result = {
         "coverage_summary": [],
+        "coverage": [],
         "missing_knowledge": [],
+        "missing_information": [],
+        "missing_required_documents": [],
         "risk_areas": [],
+        "contradictions": [],
         "suggested_next_documents": [],
+        "recommended_next_documents": [],
         "automation_readiness": [],
         "sources_used": [],
     }
 
-    cs = payload.get("coverage_summary", [])
+    cs = payload.get("coverage_summary", payload.get("coverage", []))
     if isinstance(cs, list):
         cleaned = []
         for c in cs:
@@ -1225,10 +1513,17 @@ def normalize_knowledge_audit_output(payload) -> dict:
                 raw_ids = []
             cleaned.append({"area": area, "source_ids": [str(s) for s in raw_ids if isinstance(s, str)]})
         result["coverage_summary"] = cleaned
+        result["coverage"] = list(cleaned)
 
-    mk = payload.get("missing_knowledge")
+    mk = payload.get("missing_knowledge", payload.get("missing_information"))
     if isinstance(mk, list):
-        result["missing_knowledge"] = [str(m) for m in mk if isinstance(m, str) and m.strip()]
+        missing_items = [str(m) for m in mk if isinstance(m, str) and m.strip()]
+        result["missing_knowledge"] = missing_items
+        result["missing_information"] = list(missing_items)
+
+    mrd = payload.get("missing_required_documents")
+    if isinstance(mrd, list):
+        result["missing_required_documents"] = [str(m) for m in mrd if isinstance(m, str) and m.strip()]
 
     ra = payload.get("risk_areas", [])
     if isinstance(ra, list):
@@ -1248,12 +1543,40 @@ def normalize_knowledge_audit_output(payload) -> dict:
             cleaned.append({"area": area, "detail": str(detail), "source_ids": [str(s) for s in raw_ids if isinstance(s, str)]})
         result["risk_areas"] = cleaned
 
-    snd = payload.get("suggested_next_documents")
+    contradictions = payload.get("contradictions", [])
+    if isinstance(contradictions, list):
+        cleaned = []
+        for item in contradictions:
+            if not isinstance(item, dict):
+                continue
+            area = item.get("area", "")
+            detail = item.get("detail", "")
+            status = item.get("status", "possible")
+            if not isinstance(area, str) or not area.strip():
+                continue
+            raw_ids = item.get("source_ids", [])
+            if isinstance(raw_ids, str):
+                raw_ids = [raw_ids]
+            if not isinstance(raw_ids, list):
+                raw_ids = []
+            cleaned.append(
+                {
+                    "status": str(status) if str(status).lower() == "certain" else "possible",
+                    "area": area,
+                    "detail": str(detail),
+                    "source_ids": [str(s) for s in raw_ids if isinstance(s, str)],
+                }
+            )
+        result["contradictions"] = cleaned
+
+    snd = payload.get("suggested_next_documents", payload.get("recommended_next_documents"))
     if isinstance(snd, list):
-        result["suggested_next_documents"] = [str(m) for m in snd if isinstance(m, str) and m.strip()]
+        next_docs = [str(m) for m in snd if isinstance(m, str) and m.strip()]
+        result["suggested_next_documents"] = next_docs
+        result["recommended_next_documents"] = list(next_docs)
 
     ar = payload.get("automation_readiness", [])
-    canonical_cats = {"Safe to answer from sources", "AI draft + human review", "Keep manual"}
+    canonical_cats = ("Safe to answer from sources", "AI draft + human review", "Keep manual")
     auto_buckets = {c: [] for c in canonical_cats}
     if isinstance(ar, list):
         for a in ar:
@@ -1278,13 +1601,18 @@ def sanitize_knowledge_audit_source_ids(result: dict, source_catalog: list) -> d
     valid_ids = _valid_source_ids(source_catalog) if source_catalog else set()
     sanitized = {
         "coverage_summary": [],
+        "coverage": [],
         "missing_knowledge": list(result.get("missing_knowledge", [])),
+        "missing_information": list(result.get("missing_information", result.get("missing_knowledge", []))),
+        "missing_required_documents": list(result.get("missing_required_documents", [])),
         "risk_areas": [],
+        "contradictions": [],
         "suggested_next_documents": list(result.get("suggested_next_documents", [])),
+        "recommended_next_documents": list(result.get("recommended_next_documents", result.get("suggested_next_documents", []))),
         "automation_readiness": list(result.get("automation_readiness", [])),
         "sources_used": _sanitize_source_ids(result.get("sources_used", []), valid_ids),
     }
-    for cov in result.get("coverage_summary", []):
+    for cov in result.get("coverage_summary", result.get("coverage", [])):
         if not isinstance(cov, dict):
             continue
         area = cov.get("area", "")
@@ -1293,6 +1621,7 @@ def sanitize_knowledge_audit_source_ids(result: dict, source_catalog: list) -> d
         clean_ids = _sanitize_source_ids(cov.get("source_ids", []), valid_ids)
         if clean_ids:
             sanitized["coverage_summary"].append({"area": area, "source_ids": clean_ids})
+    sanitized["coverage"] = list(sanitized["coverage_summary"])
 
     for risk in result.get("risk_areas", []):
         if not isinstance(risk, dict):
@@ -1304,6 +1633,85 @@ def sanitize_knowledge_audit_source_ids(result: dict, source_catalog: list) -> d
         clean_ids = _sanitize_source_ids(risk.get("source_ids", []), valid_ids)
         sanitized["risk_areas"].append({"area": area, "detail": detail, "source_ids": clean_ids})
 
+    for item in result.get("contradictions", []):
+        if not isinstance(item, dict):
+            continue
+        area = item.get("area", "")
+        detail = item.get("detail", "")
+        if not isinstance(area, str) or not area.strip():
+            continue
+        clean_ids = _sanitize_source_ids(item.get("source_ids", []), valid_ids)
+        if clean_ids:
+            status = str(item.get("status", "possible")).lower()
+            sanitized["contradictions"].append(
+                {
+                    "status": "certain" if status == "certain" else "possible",
+                    "area": area,
+                    "detail": str(detail),
+                    "source_ids": clean_ids,
+                }
+            )
+
+    return sanitized
+
+
+def finalize_knowledge_audit(
+    result: dict,
+    source_context: str,
+    source_catalog: list,
+    sources: list | None = None,
+    retrieval_trace: dict | None = None,
+) -> dict:
+    sanitized = sanitize_knowledge_audit_source_ids(result, source_catalog)
+    valid_ids = _valid_source_ids(source_catalog) if source_catalog else set()
+
+    heuristic_contradictions = detect_possible_contradictions(source_context, source_catalog)
+    existing_keys = {
+        (item.get("area"), tuple(item.get("source_ids", [])))
+        for item in sanitized.get("contradictions", [])
+        if isinstance(item, dict)
+    }
+    for item in heuristic_contradictions:
+        clean_ids = _sanitize_source_ids(item.get("source_ids", []), valid_ids)
+        key = (item.get("area"), tuple(clean_ids))
+        if clean_ids and key not in existing_keys:
+            sanitized["contradictions"].append({**item, "source_ids": clean_ids})
+            existing_keys.add(key)
+
+    inferred_missing_docs = infer_missing_required_documents(source_context)
+    for item in inferred_missing_docs:
+        if item not in sanitized["missing_required_documents"]:
+            sanitized["missing_required_documents"].append(item)
+
+    next_docs = list(sanitized.get("recommended_next_documents") or sanitized.get("suggested_next_documents") or [])
+    for item in sanitized["missing_required_documents"]:
+        if item not in next_docs:
+            next_docs.append(item)
+    sanitized["suggested_next_documents"] = next_docs
+    sanitized["recommended_next_documents"] = list(next_docs)
+
+    if not sanitized.get("missing_information"):
+        sanitized["missing_information"] = list(sanitized.get("missing_knowledge", []))
+    if not sanitized.get("missing_knowledge"):
+        sanitized["missing_knowledge"] = list(sanitized.get("missing_information", []))
+
+    used = list(sanitized.get("sources_used", []))
+    for field in ("coverage_summary", "risk_areas", "contradictions"):
+        for item in sanitized.get(field, []):
+            if not isinstance(item, dict):
+                continue
+            for sid in item.get("source_ids", []):
+                if sid in valid_ids and sid not in used:
+                    used.append(sid)
+    sanitized["sources_used"] = used
+
+    retrieval_confidence = compute_retrieval_confidence(sources or source_catalog, retrieval_trace)
+    sanitized["retrieval_confidence"] = retrieval_confidence
+    verdict = compute_readiness_verdict(sanitized, source_context, source_catalog, retrieval_confidence)
+    sanitized["readiness_verdict"] = verdict
+    sanitized["readiness_score"] = verdict["score"]
+    sanitized["readiness_level"] = verdict["level"]
+    sanitized["coverage"] = list(sanitized.get("coverage_summary", []))
     return sanitized
 
 
