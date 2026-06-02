@@ -1,6 +1,8 @@
 import gc
 import os
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 
 # pyrefly: ignore [missing-import]
@@ -22,6 +24,15 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 CHROMA_PATH = ROOT_DIR / "chroma_db"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 MISSING_CONTEXT_ANSWER = "That information was not found in the uploaded documents."
+RRF_K = 60
+KEYWORD_CANDIDATE_FLOOR = 20
+TOKEN_RE = re.compile(r"[A-Za-z0-9$][A-Za-z0-9._$:/-]*")
+STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "did", "do",
+    "does", "each", "for", "from", "has", "have", "how", "in", "is", "it",
+    "its", "of", "on", "or", "say", "says", "the", "to", "what", "when",
+    "where", "which", "who", "why", "with",
+}
 
 
 SMALL_TALK_RE = re.compile(
@@ -65,6 +76,188 @@ def _confidence_from_distance(distance: float) -> int:
     return max(0, min(100, round(100 / (1 + value))))
 
 
+def _tokenize(text: str) -> list[str]:
+    return [match.group(0).lower() for match in TOKEN_RE.finditer(text or "")]
+
+
+def _query_terms(query: str) -> list[str]:
+    terms = []
+    seen = set()
+    for term in _tokenize(query):
+        if term in seen:
+            continue
+        if term in STOPWORDS:
+            continue
+        seen.add(term)
+        terms.append(term)
+    return terms
+
+
+def _rare_looking_term(term: str) -> bool:
+    return any(ch.isdigit() for ch in term) or any(ch in term for ch in "$._:/-") or len(term) <= 4
+
+
+def _keyword_score(query: str, content: str) -> tuple[float, list[str]]:
+    terms = _query_terms(query)
+    if not terms or not content:
+        return 0.0, []
+
+    content_terms = _tokenize(content)
+    if not content_terms:
+        return 0.0, []
+
+    frequencies = {}
+    for term in content_terms:
+        frequencies[term] = frequencies.get(term, 0) + 1
+
+    score = 0.0
+    exact_terms = []
+    for term in terms:
+        count = frequencies.get(term, 0)
+        if not count:
+            continue
+        exact_terms.append(term)
+        weight = 3.0 if _rare_looking_term(term) else 1.0
+        score += min(count, 8) * weight
+
+    normalized_query = " ".join(terms)
+    normalized_content = " ".join(content_terms)
+    if len(terms) >= 2 and normalized_query in normalized_content:
+        score += 8.0
+
+    return score, exact_terms
+
+
+def _candidate_key(doc) -> tuple:
+    metadata = getattr(doc, "metadata", {}) or {}
+    source = Path(metadata.get("source", "unknown")).name
+    return (
+        source,
+        metadata.get("chunk_id"),
+        metadata.get("doc_chunk_id"),
+        metadata.get("page"),
+        (getattr(doc, "page_content", "") or "")[:80],
+    )
+
+
+def _keyword_candidates(vectorstore, question: str, search_filter: dict | None, indexed_docs: set[str], limit: int) -> list[dict]:
+    try:
+        if search_filter:
+            raw = vectorstore.get(where=search_filter, include=["documents", "metadatas"])
+        else:
+            raw = vectorstore.get(include=["documents", "metadatas"])
+    except Exception:
+        return []
+
+    documents = raw.get("documents") or []
+    metadatas = raw.get("metadatas") or []
+    candidates = []
+    for order, content in enumerate(documents):
+        metadata = metadatas[order] if order < len(metadatas) and isinstance(metadatas[order], dict) else {}
+        src = Path(metadata.get("source", "unknown")).name
+        if indexed_docs and src not in indexed_docs:
+            continue
+        score, exact_terms = _keyword_score(question, content or "")
+        if score <= 0:
+            continue
+        doc = SimpleNamespace(page_content=content or "", metadata=metadata)
+        candidates.append(
+            {
+                "doc": doc,
+                "keyword_score": score,
+                "exact_terms": exact_terms,
+                "keyword_order": order,
+            }
+        )
+
+    candidates.sort(key=lambda item: (-item["keyword_score"], item["keyword_order"]))
+    return candidates[:limit]
+
+
+def _fuse_candidates(vector_results: list, keyword_results: list, limit: int) -> list[dict]:
+    fused = {}
+    first_seen = 0
+
+    for rank, (doc, distance) in enumerate(vector_results, start=1):
+        key = _candidate_key(doc)
+        if key not in fused:
+            fused[key] = {"doc": doc, "first_seen": first_seen, "fused_score": 0.0}
+            first_seen += 1
+        fused[key]["vector_rank"] = rank
+        fused[key]["vector_distance"] = float(distance)
+        fused[key]["fused_score"] += 1 / (RRF_K + rank)
+
+    for rank, item in enumerate(keyword_results, start=1):
+        doc = item["doc"]
+        key = _candidate_key(doc)
+        if key not in fused:
+            fused[key] = {"doc": doc, "first_seen": first_seen, "fused_score": 0.0}
+            first_seen += 1
+        fused[key]["keyword_rank"] = rank
+        fused[key]["keyword_score"] = item["keyword_score"]
+        fused[key]["exact_terms"] = item["exact_terms"]
+        fused[key]["fused_score"] += 1 / (RRF_K + rank)
+
+    return sorted(
+        fused.values(),
+        key=lambda item: (
+            -item["fused_score"],
+            min(item.get("vector_rank", 10**9), item.get("keyword_rank", 10**9)),
+            item["first_seen"],
+        ),
+    )[:limit]
+
+
+def _source_from_fused_candidate(candidate: dict, rank: int) -> dict | None:
+    doc = candidate["doc"]
+    src = Path(doc.metadata.get("source", "unknown")).name
+    file_type = doc.metadata.get("file_type")
+    location_type = doc.metadata.get("location_type")
+    location_label = doc.metadata.get("location_label")
+    page = None
+    if doc.metadata.get("page") is not None:
+        page = int(doc.metadata.get("page")) + 1
+        location_label = location_label or f"Page {page}"
+        location_type = location_type or "page"
+    location_label = location_label or "Document"
+    location_type = location_type or "document"
+    chunk_id = doc.metadata.get("chunk_id")
+    doc_chunk_id = doc.metadata.get("doc_chunk_id")
+
+    if "vector_distance" in candidate:
+        distance = round(float(candidate["vector_distance"]), 4)
+        score = _confidence_from_distance(candidate["vector_distance"])
+    else:
+        distance = 0.0
+        score = max(1, min(100, round(float(candidate.get("keyword_score", 0)) * 8)))
+
+    methods = []
+    if candidate.get("vector_rank") is not None:
+        methods.append("vector")
+    if candidate.get("keyword_rank") is not None:
+        methods.append("keyword")
+
+    return {
+        "rank": rank,
+        "source": src,
+        "page": page,
+        "file_type": file_type,
+        "location_type": location_type,
+        "location_label": location_label,
+        "chunk_id": chunk_id,
+        "doc_chunk_id": doc_chunk_id,
+        "score": score,
+        "distance": distance,
+        "preview": doc.page_content[:320].replace("\n", " "),
+        "retrieval_methods": methods,
+        "retrieval_method": "+".join(methods) if methods else "unknown",
+        "vector_rank": candidate.get("vector_rank"),
+        "keyword_rank": candidate.get("keyword_rank"),
+        "fused_score": round(float(candidate.get("fused_score", 0.0)), 6),
+        "exact_terms": candidate.get("exact_terms", []),
+    }
+
+
 def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Callable | None = None, selected_docs: list | None = None):
     """
     Search the vector store for relevant chunks.
@@ -75,6 +268,7 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     if not CHROMA_PATH.exists():
         _emit(progress_callback, "missing_index", {"message": "No local vector index found."})
         return "", []
+    started_at = time.perf_counter()
 
     stats = load_index_stats() or {}
     indexed_docs = {
@@ -106,15 +300,17 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
     embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
     vectorstore = Chroma(persist_directory=str(CHROMA_PATH), embedding_function=embeddings)
 
+    candidate_limit = max(n_results * 4, KEYWORD_CANDIDATE_FLOOR)
     _emit(progress_callback, "search", {"message": "Query embedded. Searching nearest chunks."})
     try:
         if search_filter:
-            results = vectorstore.similarity_search_with_score(
-                question, k=n_results,
+            vector_results = vectorstore.similarity_search_with_score(
+                question, k=candidate_limit,
                 filter=search_filter,
             )
         else:
-            results = vectorstore.similarity_search_with_score(question, k=n_results)
+            vector_results = vectorstore.similarity_search_with_score(question, k=candidate_limit)
+        keyword_results = _keyword_candidates(vectorstore, question, search_filter, indexed_docs, candidate_limit)
     except Exception as exc:
         _emit(progress_callback, "error", {"message": str(exc)})
         return "", []
@@ -126,48 +322,27 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         del vectorstore
         gc.collect()
 
-    if not results:
+    fused_results = _fuse_candidates(vector_results, keyword_results, n_results)
+
+    if not fused_results:
         _emit(progress_callback, "empty", {"message": "No chunks matched the question."})
         return "", []
 
     context_parts = []
     sources = []
-    for rank, (doc, distance) in enumerate(results, start=1):
+    for rank, candidate in enumerate(fused_results, start=1):
+        doc = candidate["doc"]
         src = Path(doc.metadata.get("source", "unknown")).name
         if indexed_docs and src not in indexed_docs:
             continue
-        file_type = doc.metadata.get("file_type")
-        location_type = doc.metadata.get("location_type")
-        location_label = doc.metadata.get("location_label")
-        page = None
-        if doc.metadata.get("page") is not None:
-            page = int(doc.metadata.get("page")) + 1
-            location_label = location_label or f"Page {page}"
-            location_type = location_type or "page"
-        location_label = location_label or "Document"
-        location_type = location_type or "document"
-        chunk_id = doc.metadata.get("chunk_id")
-        doc_chunk_id = doc.metadata.get("doc_chunk_id")
-        score = _confidence_from_distance(float(distance))
-
+        source = _source_from_fused_candidate(candidate, rank)
+        if not source:
+            continue
         context_parts.append(
-            f"[Source: {src}, {location_label}]\n"
+            f"[Source: {src}, {source['location_label']}]\n"
             f"{doc.page_content}"
         )
 
-        source = {
-            "rank": rank,
-            "source": src,
-            "page": page,
-            "file_type": file_type,
-            "location_type": location_type,
-            "location_label": location_label,
-            "chunk_id": chunk_id,
-            "doc_chunk_id": doc_chunk_id,
-            "score": score,
-            "distance": round(float(distance), 4),
-            "preview": doc.page_content[:320].replace("\n", " "),
-        }
         sources.append(source)
         _emit(progress_callback, "candidate", source)
 
@@ -175,6 +350,17 @@ def retrieve_chunks(question: str, n_results: int = 10, progress_callback: Calla
         _emit(progress_callback, "empty", {"message": "No usable chunks matched the question."})
         return "", []
 
+    trace = {
+        "query": question,
+        "selected_docs": [Path(name).name for name in selected_docs] if selected_docs else [],
+        "vector_candidate_count": len(vector_results),
+        "keyword_candidate_count": len(keyword_results),
+        "final_candidate_count": len(sources),
+        "top_final_source_ids": [source.get("source") for source in sources[:5]],
+        "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+    }
+    retrieve_chunks.last_trace = trace
+    _emit(progress_callback, "trace", trace)
     _emit(progress_callback, "complete", {"matches": len(sources)})
     return "\n\n".join(context_parts), sources
 
