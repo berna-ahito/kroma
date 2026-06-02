@@ -11,7 +11,7 @@ Kroma turns your own PDF, TXT, and Markdown documents into answers, summaries, f
 ![LangChain RAG](https://img.shields.io/badge/LangChain%20%2F%20RAG-retrieval--grounded-1C3C3C)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-5B5BD6)
 ![Groq](https://img.shields.io/badge/Groq-LLM%20inference-F55036)
-![Status](https://img.shields.io/badge/status-portfolio%20build-6B7280)
+![Status](https://img.shields.io/badge/status-active%20build-2563EB)
 
 **Live demo:** coming soon  
 **Built by:** [Claire Ahito](https://github.com/berna-ahito) · CIT-U Cebu · 2026
@@ -28,9 +28,9 @@ Coming soon.
 
 ## Overview
 
-Kroma is a local-document RAG app that lets users upload files, ask questions, inspect retrieved source chunks, and generate study or knowledge-work outputs from the same document index.
+Kroma is a local-document RAG app that lets users upload files, ask questions, inspect retrieved source chunks, and generate study or knowledge-work outputs from the same source-grounded index.
 
-The project demonstrates a complete AI product loop: upload validation, indexing, retrieval, generation, source display, browser export, demo hardening, and deterministic trust-behavior evals.
+It is designed for AI workflows where answers need to be useful, but also traceable back to the documents they came from.
 
 Supported uploads: **PDF, TXT, Markdown (`.md`, `.markdown`)**. Text and Markdown files must be UTF-8 or UTF-8-SIG encoded.
 
@@ -178,11 +178,11 @@ Render Free caveats:
 
 Demo behavior: when `KROMA_DEMO_KEY` is set, uploads, processing, deletion, library clearing, unrestricted chat, study generation, Knowledge Copilot, and Knowledge Audit require the `X-Kroma-Demo-Key` header. The landing page, dashboard, redirects, health check, and bundled public sample remain available; unkeyed visitors can use suggested sample questions without consuming Groq tokens.
 
-## Portfolio context
+## Product direction
 
-Kroma is Build 1 of my AI engineering portfolio. It shows a practical RAG system with hardened uploads, local indexing, vector retrieval, LLM-backed outputs, source-aware UI, and trust-focused evals.
+AI-generated answers are often hard to verify. Kroma focuses on making document-based AI responses easier to inspect by pairing chat, study tools, Knowledge Copilot, and Knowledge Audit with visible source context.
 
-**Next builds:** Lead Qualification Agent · Content Repurposing Pipeline · Voice AI Agent · Multi-Agent Research Writer
+The current version is an active build for source-grounded document chat and knowledge workflows. Future direction may include persistent storage, team-ready document libraries, richer audit reports, and integrations for business knowledge bases.
 
 ## Contact
 
