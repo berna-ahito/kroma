@@ -902,6 +902,156 @@ def run_multifile_selected_docs_evals(failures: list) -> None:
                 os.environ["KROMA_RATE_LIMIT_REQUESTS"] = original_limit
 
 
+def run_hybrid_retrieval_evals(failures: list) -> None:
+    original_chroma_path = kroma_rag.CHROMA_PATH
+    original_load_index_stats = kroma_rag.load_index_stats
+    original_embeddings = kroma_rag.SentenceTransformerEmbeddings
+    original_chroma = kroma_rag.Chroma
+
+    class FakeDoc:
+        def __init__(self, source: str, content: str, chunk_id: int):
+            self.page_content = content
+            self.metadata = {
+                "source": source,
+                "file_type": "txt",
+                "location_type": "document",
+                "location_label": "Document",
+                "chunk_id": chunk_id,
+                "doc_chunk_id": chunk_id,
+            }
+
+    docs = {
+        "semantic.txt": FakeDoc("semantic.txt", "General contract information without the unique code.", 1),
+        "exact.txt": FakeDoc("exact.txt", "The purchase code ZXQ-9187 costs $49.95 on 2026-06-02.", 2),
+        "scope_a.txt": FakeDoc("scope_a.txt", "Scope A contains ALPHA-2026 for the selected policy.", 3),
+        "scope_b.txt": FakeDoc("scope_b.txt", "Scope B contains ALPHA-2026 but must be excluded when unselected.", 4),
+        "deleted.txt": FakeDoc("deleted.txt", "Deleted document contains GONE-404 and should not surface.", 5),
+        "vector_only.txt": FakeDoc("vector_only.txt", "Vector-only candidate with no shared exact token.", 6),
+        "hybrid.txt": FakeDoc("hybrid.txt", "Hybrid candidate contains RRF-WIN and ranks in both lanes.", 7),
+        "other.txt": FakeDoc("other.txt", "Other candidate with unrelated terms.", 8),
+    }
+
+    class FakeEmbeddings:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeClient:
+        @staticmethod
+        def clear_system_cache():
+            return None
+
+    def allowed_sources(filter):
+        if not filter:
+            return None
+        return set(filter.get("source", {}).get("$in", []))
+
+    class FakeChroma:
+        def __init__(self, *args, **kwargs):
+            self._client = FakeClient()
+
+        def similarity_search_with_score(self, question, k=10, filter=None):
+            allowed = allowed_sources(filter)
+            if "rrf-win" in question.lower():
+                ordered = [
+                    (docs["vector_only.txt"], 0.01),
+                    (docs["other.txt"], 0.02),
+                    (docs["hybrid.txt"], 0.03),
+                ]
+            elif "gone-404" in question.lower():
+                ordered = [(docs["deleted.txt"], 0.01)]
+            elif "alpha-2026" in question.lower():
+                ordered = [(docs["scope_a.txt"], 0.2), (docs["scope_b.txt"], 0.21)]
+            else:
+                ordered = [(docs["semantic.txt"], 0.01)]
+            return [
+                item for item in ordered
+                if allowed is None or item[0].metadata["source"] in allowed
+            ][:k]
+
+        def get(self, where=None, include=None):
+            allowed = allowed_sources(where)
+            visible = [
+                doc for doc in docs.values()
+                if allowed is None or doc.metadata["source"] in allowed
+            ]
+            return {
+                "documents": [doc.page_content for doc in visible],
+                "metadatas": [doc.metadata for doc in visible],
+            }
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            kroma_rag.CHROMA_PATH = Path(temp_dir) / "chroma_db"
+            kroma_rag.CHROMA_PATH.mkdir()
+            kroma_rag.load_index_stats = lambda: {
+                "total_chunks": 7,
+                "docs": [
+                    {"name": "semantic.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "exact.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "scope_a.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "scope_b.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "vector_only.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "hybrid.txt", "file_type": "txt", "chunks": 1},
+                    {"name": "other.txt", "file_type": "txt", "chunks": 1},
+                ],
+            }
+            kroma_rag.SentenceTransformerEmbeddings = FakeEmbeddings
+            kroma_rag.Chroma = FakeChroma
+
+            events = []
+            context, sources = retrieve_chunks(
+                "What is the ZXQ-9187 price on 2026-06-02?",
+                n_results=3,
+                progress_callback=lambda event, payload: events.append((event, payload)),
+            )
+            exact_ok = (
+                "ZXQ-9187" in context
+                and any(source["source"] == "exact.txt" and source.get("keyword_rank") for source in sources)
+            )
+            trace = next((payload for event, payload in events if event == "trace"), {})
+            trace_ok = (
+                trace.get("query") == "What is the ZXQ-9187 price on 2026-06-02?"
+                and trace.get("vector_candidate_count") == 1
+                and trace.get("keyword_candidate_count", 0) >= 1
+                and trace.get("final_candidate_count") == len(sources)
+                and all("ZXQ-9187" not in str(value) for key, value in trace.items() if key != "query")
+            )
+            if not exact_ok or not trace_ok:
+                failures.append(("hybrid exact-term retrieval with trace", "exact source + safe trace", {"sources": sources, "trace": trace}))
+                print("FAIL: hybrid exact-term retrieval with trace")
+            else:
+                print("PASS: hybrid exact-term retrieval with trace")
+
+            scoped_context, scoped_sources = retrieve_chunks("Find ALPHA-2026", n_results=5, selected_docs=["scope_a.txt"])
+            scoped_sources_set = {source["source"] for source in scoped_sources}
+            if scoped_sources_set != {"scope_a.txt"} or "Scope B" in scoped_context:
+                failures.append(("hybrid keyword retrieval respects selected_docs", {"scope_a.txt"}, {"sources": scoped_sources_set, "context": scoped_context}))
+                print("FAIL: hybrid keyword retrieval respects selected_docs")
+            else:
+                print("PASS: hybrid keyword retrieval respects selected_docs")
+
+            deleted_context, deleted_sources = retrieve_chunks("Find GONE-404", n_results=5)
+            if deleted_context != "" or deleted_sources != []:
+                failures.append(("hybrid keyword retrieval excludes deleted docs", ("", []), (deleted_context, deleted_sources)))
+                print("FAIL: hybrid keyword retrieval excludes deleted docs")
+            else:
+                print("PASS: hybrid keyword retrieval excludes deleted docs")
+
+            rrf_context, rrf_sources = retrieve_chunks("Find RRF-WIN", n_results=2)
+            first_source = rrf_sources[0]["source"] if rrf_sources else None
+            first_has_both = bool(rrf_sources and rrf_sources[0].get("vector_rank") and rrf_sources[0].get("keyword_rank"))
+            if first_source != "hybrid.txt" or not first_has_both or "RRF-WIN" not in rrf_context:
+                failures.append(("RRF promotes candidate ranked in both lanes", "hybrid.txt first", rrf_sources))
+                print("FAIL: RRF promotes candidate ranked in both lanes")
+            else:
+                print("PASS: RRF promotes candidate ranked in both lanes")
+        finally:
+            kroma_rag.CHROMA_PATH = original_chroma_path
+            kroma_rag.load_index_stats = original_load_index_stats
+            kroma_rag.SentenceTransformerEmbeddings = original_embeddings
+            kroma_rag.Chroma = original_chroma
+
+
 def run_demo_key_evals(failures: list) -> None:
     original_retrieve = kroma_api.retrieve_chunks
     original_generate = kroma_api.generate_answer
@@ -1818,6 +1968,7 @@ def main() -> int:
     run_delete_index_evals(failures)
     run_deleted_only_query_eval(failures)
     run_multifile_selected_docs_evals(failures)
+    run_hybrid_retrieval_evals(failures)
     run_demo_key_evals(failures)
     run_groq_rate_limit_evals(failures)
     run_request_bound_evals(failures)
