@@ -78,7 +78,7 @@ flowchart LR
 | Layer | Technology |
 |---|---|
 | Backend | Python · FastAPI |
-| AI / LLM | Groq API · Llama 4 Scout |
+| AI / LLM | Groq currently; adaptable to other LangChain-compatible chat model providers |
 | RAG pipeline | LangChain · ChromaDB · hybrid retrieval/RRF |
 | Embeddings | BAAI/bge-small-en-v1.5 · SentenceTransformers |
 | Document processing | PyPDF · UTF-8 text/Markdown |
@@ -160,6 +160,8 @@ kroma/
 ## Deployment notes
 
 Kroma can deploy to Render as a Docker Web Service. The Docker image builds `frontend/dist` in a Node stage, copies the assets into the Python runtime image, and runs `uvicorn backend.api:app --host 0.0.0.0 --port ${PORT:-8000}` without `--reload`.
+
+The current deployment uses `GROQ_API_KEY`. To use another LLM provider, update the backend generation adapter and corresponding environment variables.
 
 | Variable | Purpose |
 |---|---|
