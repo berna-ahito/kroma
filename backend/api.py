@@ -32,7 +32,7 @@ from .rag import (
     build_source_linked_context,
     business_context_is_relevant,
     business_needs_human_review,
-    compute_readiness_verdict,
+    finalize_knowledge_audit,
     generate_answer,
     generate_business_copilot_output,
     generate_flashcards,
@@ -726,16 +726,28 @@ class KnowledgeAuditRequest(BaseModel):
 KNOWLEDGE_AUDIT_NO_CONTEXT_RESPONSE = {
     "result": {
         "coverage_summary": [],
+        "coverage": [],
         "missing_knowledge": ["No relevant information was found in the selected documents."],
+        "missing_information": ["No relevant information was found in the selected documents."],
+        "missing_required_documents": [],
         "risk_areas": [],
+        "contradictions": [],
         "suggested_next_documents": [],
+        "recommended_next_documents": [],
         "automation_readiness": [
             {"category": "Keep manual", "items": ["All tasks — no source context available"]}
         ],
         "readiness_verdict": {
             "level": "Low",
-            "reasons": ["No source-grounded context available"]
+            "score": 0,
+            "reasons": ["No source-grounded context available"],
+            "internal_use": {"level": "Low", "score": 0},
+            "external_customer_facing": {"level": "Low", "score": 0},
+            "automation": {"level": "Low", "score": 0},
         },
+        "readiness_score": 0,
+        "readiness_level": "Low",
+        "retrieval_confidence": {"level": "Low", "score": 0, "notes": ["No retrieved source chunks"]},
         "sources_used": []
     },
     "sources": []
@@ -757,9 +769,8 @@ def knowledge_audit(req: KnowledgeAuditRequest, request: Request):
 
     raw = generate_knowledge_audit(source_context, source_catalog)
     normalized = normalize_knowledge_audit_output(raw)
-    sanitized = sanitize_knowledge_audit_source_ids(normalized, source_catalog)
-    verdict = compute_readiness_verdict(sanitized, source_context)
-    sanitized["readiness_verdict"] = verdict
+    retrieval_trace = getattr(retrieve_chunks, "last_trace", None)
+    sanitized = finalize_knowledge_audit(normalized, source_context, source_catalog, sources, retrieval_trace)
 
     return {"result": sanitized, "sources": source_catalog}
 
