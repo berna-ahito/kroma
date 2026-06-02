@@ -28,9 +28,9 @@ Coming soon.
 
 ## Overview
 
-Kroma is a local-document RAG app that lets users upload files, ask questions, inspect retrieved source chunks, and generate study or knowledge-work outputs from the same source-grounded index.
+Kroma is a local-document RAG app that lets users upload files, ask questions, inspect retrieved source chunks, and generate study or knowledge-work outputs from the same source-grounded index. Retrieval combines semantic vector search with keyword matching through reciprocal rank fusion (RRF).
 
-It is designed for AI workflows where answers need to be useful, but also traceable back to the documents they came from.
+It is designed for AI workflows where answers need to be useful, but also traceable back to the documents they came from. Request-scoped retrieval traces support internal observability and debugging without turning trace data into a public-facing feature.
 
 Supported uploads: **PDF, TXT, Markdown (`.md`, `.markdown`)**. Text and Markdown files must be UTF-8 or UTF-8-SIG encoded.
 
@@ -46,10 +46,10 @@ Knowledge Copilot and Knowledge Audit screenshots can be added when available.
 
 | Area | What users can do |
 |---|---|
-| Document chat | Ask questions across all documents or selected files, with source cards, locations, previews, and relevance scores. |
+| Document chat | Ask questions across all documents or selected files, with hybrid semantic + keyword retrieval, source cards, locations, previews, and relevance scores. |
 | Study tools | Generate flashcards, quizzes, summaries, suggestions, and browser PDF exports from uploaded sources. |
 | Knowledge Copilot | Answer from sources, draft replies, summarize for a team, extract action items, or run risk checks. |
-| Knowledge Audit | Review coverage, missing knowledge, risk areas, next documents, automation readiness, and Low / Medium / High readiness. |
+| Knowledge Audit | Review coverage, missing knowledge, risk areas, next documents, automation readiness, and AI-readiness scoring. |
 | Trust controls | Return no-context refusals, sanitize model-provided source IDs, flag sensitive/external outputs for human review, and run deterministic evals. |
 | Demo protection | Gate custom uploads and LLM-backed actions with `KROMA_DEMO_KEY`, while keeping a public sample mode available. |
 
@@ -64,7 +64,7 @@ flowchart LR
     E --> F[(ChromaDB local vector store)]
 
     G[Question / study request / Knowledge Copilot task / Knowledge Audit] --> H[FastAPI API routes]
-    H --> I[LangChain retrieval]
+    H --> I[Hybrid retrieval: LangChain + keyword + RRF]
     F --> I
     I --> J[Retrieved context + source catalog]
     J --> K[Groq Llama model]
@@ -79,7 +79,7 @@ flowchart LR
 |---|---|
 | Backend | Python · FastAPI |
 | AI / LLM | Groq API · Llama 4 Scout |
-| RAG pipeline | LangChain · ChromaDB |
+| RAG pipeline | LangChain · ChromaDB · hybrid retrieval/RRF |
 | Embeddings | BAAI/bge-small-en-v1.5 · SentenceTransformers |
 | Document processing | PyPDF · UTF-8 text/Markdown |
 | Frontend | React 18 · Vite |
