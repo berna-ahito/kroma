@@ -333,6 +333,192 @@ def _clear_rate_limit_buckets() -> None:
         kroma_api._groq_rate_limit_buckets.clear()
 
 
+def _clear_mutation_rate_limit_buckets() -> None:
+    with kroma_api._mutation_rate_limit_lock:
+        kroma_api._mutation_rate_limit_buckets.clear()
+
+
+def _force_release_mutation_lock() -> None:
+    """Release the mutation lock if it is currently held (eval cleanup helper)."""
+    try:
+        kroma_api._mutation_lock.release()
+    except RuntimeError:
+        pass  # Already released; that's fine
+
+
+def run_mutation_rate_limit_evals(failures: list) -> None:
+    """Eval: mutation endpoints are rate-limited independently, after demo-key check."""
+    import io
+    from unittest.mock import patch
+
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        os.environ["KROMA_DEMO_KEY"] = "mut-secret"
+        os.environ["KROMA_MUTATION_RATE_LIMIT_REQUESTS"] = "2"
+        os.environ["KROMA_MUTATION_RATE_LIMIT_WINDOW_SECONDS"] = "600"
+        _clear_mutation_rate_limit_buckets()
+        _force_release_mutation_lock()
+
+        # --- Auth must fire before quota is consumed ---
+        missing = client.post("/api/process")
+        wrong = client.post("/api/process", headers={"X-Kroma-Demo-Key": "wrong"})
+        if missing.status_code != 401 or wrong.status_code != 401:
+            failures.append(("mutation endpoints require demo key before rate limit consumed", "401/401", (missing.status_code, wrong.status_code)))
+            print("FAIL: mutation endpoints require demo key before rate limit consumed")
+        else:
+            print("PASS: mutation endpoints require demo key before rate limit consumed")
+
+        # Confirm the bad-key attempts did NOT consume quota (bucket should be empty)
+        with kroma_api._mutation_rate_limit_lock:
+            bucket_count = sum(int(b["count"]) for b in kroma_api._mutation_rate_limit_buckets.values())
+        if bucket_count != 0:
+            failures.append(("failed auth does not consume mutation rate limit quota", 0, bucket_count))
+            print("FAIL: failed auth does not consume mutation rate limit quota")
+        else:
+            print("PASS: failed auth does not consume mutation rate limit quota")
+
+        # --- Correct key IS subject to mutation rate limit ---
+        # Consume all allowed slots by sending process requests (will hit no-docs 400 but that's ok)
+        # Lock is held between _try_acquire and finally, so use process which returns 400 quickly
+        _force_release_mutation_lock()
+        _clear_mutation_rate_limit_buckets()
+        for _ in range(2):
+            r = client.post("/api/process", headers={"X-Kroma-Demo-Key": "mut-secret"})
+            # 400 (no docs) is expected for /api/process in test env — quota is consumed
+        limited_process = client.post("/api/process", headers={"X-Kroma-Demo-Key": "mut-secret"})
+        retry_after = limited_process.headers.get("Retry-After")
+        if limited_process.status_code != 429 or limited_process.json().get("detail") != kroma_api.MUTATION_RATE_LIMIT_DETAIL:
+            failures.append(("correct demo key is subject to mutation rate limit", "429 with detail", {"status": limited_process.status_code, "body": limited_process.json()}))
+            print("FAIL: correct demo key is subject to mutation rate limit")
+        else:
+            print("PASS: correct demo key is subject to mutation rate limit")
+        if retry_after is None or int(retry_after) <= 0:
+            failures.append(("mutation rate limit response includes Retry-After", "> 0", retry_after))
+            print("FAIL: mutation rate limit response includes Retry-After")
+        else:
+            print("PASS: mutation rate limit response includes Retry-After")
+
+        # --- upload/process/delete/clear share the mutation limiter ---
+        _force_release_mutation_lock()
+        _clear_mutation_rate_limit_buckets()
+        os.environ["KROMA_MUTATION_RATE_LIMIT_REQUESTS"] = "1"
+        # Consume the 1 slot on process
+        client.post("/api/process", headers={"X-Kroma-Demo-Key": "mut-secret"})
+        # delete should also be blocked now (shared bucket)
+        blocked_delete = client.delete("/api/docs/sample.pdf", headers={"X-Kroma-Demo-Key": "mut-secret"})
+        if blocked_delete.status_code != 429:
+            failures.append(("upload/process/delete/clear share the mutation limiter", 429, blocked_delete.status_code))
+            print("FAIL: upload/process/delete/clear share the mutation limiter")
+        else:
+            print("PASS: upload/process/delete/clear share the mutation limiter")
+
+        # --- Public demo endpoints are NOT affected by mutation rate limit ---
+        _force_release_mutation_lock()
+        _clear_mutation_rate_limit_buckets()
+        public_demo = client.post("/api/demo/chat", json={"question": kroma_api.PUBLIC_DEMO_QUESTIONS[0]})
+        if public_demo.status_code != 200:
+            failures.append(("public demo endpoints are not affected by mutation rate limit", 200, public_demo.status_code))
+            print("FAIL: public demo endpoints are not affected by mutation rate limit")
+        else:
+            print("PASS: public demo endpoints are not affected by mutation rate limit")
+
+    finally:
+        _force_release_mutation_lock()
+        _clear_mutation_rate_limit_buckets()
+        os.environ.pop("KROMA_MUTATION_RATE_LIMIT_REQUESTS", None)
+        os.environ.pop("KROMA_MUTATION_RATE_LIMIT_WINDOW_SECONDS", None)
+        if original_key is None:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+        else:
+            os.environ["KROMA_DEMO_KEY"] = original_key
+
+
+def run_mutation_lock_evals(failures: list) -> None:
+    """Eval: process-wide mutation lock serializes concurrent mutations safely."""
+    import threading
+    import tempfile
+
+    original_docs_folder = kroma_api.DOCS_FOLDER
+    original_key = os.environ.get("KROMA_DEMO_KEY")
+    client = TestClient(kroma_api.app, raise_server_exceptions=False)
+    try:
+        os.environ["KROMA_DEMO_KEY"] = "lock-secret"
+        os.environ["KROMA_MUTATION_RATE_LIMIT_REQUESTS"] = "100"
+        _clear_mutation_rate_limit_buckets()
+        _force_release_mutation_lock()
+
+        # --- Lock rejects concurrent mutation with 409 ---
+        kroma_api._mutation_lock.acquire()  # Simulate a mutation already running
+        try:
+            response = client.post("/api/process", headers={"X-Kroma-Demo-Key": "lock-secret"})
+            if response.status_code != 409 or response.json().get("detail") != kroma_api.MUTATION_LOCK_DETAIL:
+                failures.append(("mutation lock rejects concurrent mutation safely", "409 with detail", {"status": response.status_code, "body": response.json()}))
+                print("FAIL: mutation lock rejects concurrent mutation safely")
+            else:
+                print("PASS: mutation lock rejects concurrent mutation safely")
+        finally:
+            kroma_api._mutation_lock.release()
+
+        # --- Lock is released after success ---
+        _force_release_mutation_lock()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_docs = Path(temp_dir) / "docs"
+            temp_docs.mkdir()
+            kroma_api.DOCS_FOLDER = temp_docs
+            # Call delete_doc directly with no request (no auth/rate-limit), file missing → 404
+            try:
+                kroma_api.delete_doc("nonexistent.pdf")
+            except Exception:
+                pass  # 404 expected
+            # Lock must now be released (acquirable without blocking)
+            acquired_after_success_path = kroma_api._mutation_lock.acquire(blocking=False)
+            if not acquired_after_success_path:
+                failures.append(("mutation lock is released after success (or 404)", "lock acquirable", "lock still held"))
+                print("FAIL: mutation lock is released after success (or 404)")
+            else:
+                kroma_api._mutation_lock.release()
+                print("PASS: mutation lock is released after success (or 404)")
+            kroma_api.DOCS_FOLDER = original_docs_folder
+
+        # --- Lock is released after exception ---
+        _force_release_mutation_lock()
+        original_ingest = kroma_api.ingest_documents
+        def _raise_ingest():
+            raise RuntimeError("simulated ingest failure")
+        kroma_api.ingest_documents = _raise_ingest
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_docs = Path(temp_dir) / "docs"
+            temp_docs.mkdir()
+            # Create a dummy file so docs check passes
+            (temp_docs / "dummy.txt").write_text("content", encoding="utf-8")
+            kroma_api.DOCS_FOLDER = temp_docs
+            response = client.post("/api/process", headers={"X-Kroma-Demo-Key": "lock-secret"})
+            kroma_api.DOCS_FOLDER = original_docs_folder
+        kroma_api.ingest_documents = original_ingest
+        if response.status_code != 500:
+            failures.append(("process returns 500 on ingest exception", 500, response.status_code))
+            print("FAIL: process returns 500 on ingest exception")
+        acquired_after_exc = kroma_api._mutation_lock.acquire(blocking=False)
+        if not acquired_after_exc:
+            failures.append(("mutation lock is released after exception", "lock acquirable", "lock still held"))
+            print("FAIL: mutation lock is released after exception")
+        else:
+            kroma_api._mutation_lock.release()
+            print("PASS: mutation lock is released after exception")
+
+    finally:
+        _force_release_mutation_lock()
+        _clear_mutation_rate_limit_buckets()
+        kroma_api.DOCS_FOLDER = original_docs_folder
+        os.environ.pop("KROMA_MUTATION_RATE_LIMIT_REQUESTS", None)
+        if original_key is None:
+            os.environ.pop("KROMA_DEMO_KEY", None)
+        else:
+            os.environ["KROMA_DEMO_KEY"] = original_key
+
+
+
 def run_api_docs_evals(failures: list) -> None:
     original_app_env = os.environ.get("APP_ENV")
     original_env = os.environ.get("ENV")
@@ -1244,7 +1430,14 @@ def run_retrieval_trace_evals(failures: list) -> None:
 
         kroma_api.finalize_knowledge_audit = capture_finalize
         fake_request = SimpleNamespace(headers={}, client=SimpleNamespace(host="trace-eval"))
-        response = kroma_api.knowledge_audit(kroma_api.KnowledgeAuditRequest(), request=fake_request)
+        # Temporarily clear KROMA_DEMO_KEY so the direct call bypasses auth correctly.
+        # (Prior evals may leave it set; this eval calls the function directly, not via TestClient.)
+        _saved_demo_key_for_trace_eval = os.environ.pop("KROMA_DEMO_KEY", None)
+        try:
+            response = kroma_api.knowledge_audit(kroma_api.KnowledgeAuditRequest(), request=fake_request)
+        finally:
+            if _saved_demo_key_for_trace_eval is not None:
+                os.environ["KROMA_DEMO_KEY"] = _saved_demo_key_for_trace_eval
         api_trace_ok = response.get("result", {}).get("retrieval_confidence", {}).get("score") == 90 and captured.get("trace") is scoped_trace
         if not api_trace_ok:
             failures.append(("knowledge audit uses request-scoped trace, not stale last_trace", "scoped trace", captured.get("trace")))
@@ -1255,6 +1448,7 @@ def run_retrieval_trace_evals(failures: list) -> None:
         kroma_api.retrieve_chunks = original_api_retrieve
         kroma_api.generate_knowledge_audit = original_api_generate
         kroma_api.finalize_knowledge_audit = original_api_finalize
+
 
 
 def run_demo_key_evals(failures: list) -> None:
@@ -1397,6 +1591,7 @@ def run_demo_key_evals(failures: list) -> None:
 
 def run_request_bound_evals(failures: list) -> None:
     original_retrieve = kroma_api.retrieve_chunks
+    original_key = os.environ.pop("KROMA_DEMO_KEY", None)
     client = TestClient(kroma_api.app, raise_server_exceptions=False)
     try:
         kroma_api.retrieve_chunks = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Invalid input should fail before retrieval."))
@@ -1417,6 +1612,8 @@ def run_request_bound_evals(failures: list) -> None:
                 print(f"PASS: {name}")
     finally:
         kroma_api.retrieve_chunks = original_retrieve
+        if original_key is not None:
+            os.environ["KROMA_DEMO_KEY"] = original_key
 
 
 def run_suggestion_grounding_evals(failures: list) -> None:
@@ -2276,6 +2473,8 @@ def main() -> int:
     run_suggestion_grounding_evals(failures)
     run_business_copilot_evals(failures)
     run_knowledge_audit_evals(failures)
+    run_mutation_rate_limit_evals(failures)
+    run_mutation_lock_evals(failures)
 
     if failures:
         print("\nFailures:")
