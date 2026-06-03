@@ -206,7 +206,7 @@ When `KROMA_DEMO_KEY` is set, uploads, processing, deletion, library clearing, u
 
 Kroma is a document-intelligence app built around a simple idea: AI responses from your own documents should be easy to inspect, not just fast to generate.
 
-The current version handles document chat, study tools, knowledge workflows, and coverage audits — with retrieval traces and behavioral evals built in from the start. The roadmap focuses on what makes this genuinely useful for real teams: persistent document libraries, richer audit reports, shareable knowledge bases, and integrations with tools that organizations already use.
+The current version handles document chat, study tools, knowledge workflows, and coverage audits — with retrieval traces and behavioral evals built in from the start. The roadmap focuses on making Kroma more useful for real teams: persistent document libraries, richer audit reports, shareable knowledge bases, and integrations with tools that organizations already use.
 
 ## Contact
 

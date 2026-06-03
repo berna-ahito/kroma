@@ -155,6 +155,15 @@ WINDOWS_RESERVED_NAMES = {
 _groq_rate_limit_lock = threading.Lock()
 _groq_rate_limit_buckets: dict[str, dict[str, float | int]] = {}
 
+# ── Mutation rate-limit state (upload / process / delete / clear) ───────────
+DEFAULT_MUTATION_RATE_LIMIT_REQUESTS = 10
+DEFAULT_MUTATION_RATE_LIMIT_WINDOW_SECONDS = 60
+MUTATION_RATE_LIMIT_DETAIL = "Too many library operations. Please try again shortly."
+MUTATION_LOCK_DETAIL = "Another library operation is already running. Please try again shortly."
+_mutation_rate_limit_lock = threading.Lock()
+_mutation_rate_limit_buckets: dict[str, dict[str, float | int]] = {}
+_mutation_lock = threading.Lock()
+
 
 # ── Models ──────────────────────────────────────────────────────────────────
 
@@ -211,6 +220,13 @@ def _groq_rate_limit_config() -> tuple[int, int]:
     )
 
 
+def _mutation_rate_limit_config() -> tuple[int, int]:
+    return (
+        _positive_int_env("KROMA_MUTATION_RATE_LIMIT_REQUESTS", DEFAULT_MUTATION_RATE_LIMIT_REQUESTS),
+        _positive_int_env("KROMA_MUTATION_RATE_LIMIT_WINDOW_SECONDS", DEFAULT_MUTATION_RATE_LIMIT_WINDOW_SECONDS),
+    )
+
+
 def _client_ip(request: Request) -> str:
     if request.client and request.client.host:
         return request.client.host
@@ -253,6 +269,55 @@ def _enforce_groq_rate_limit(request: Request) -> None:
             )
 
         bucket["count"] = int(bucket["count"]) + 1
+
+
+def _enforce_mutation_rate_limit(request: Request) -> None:
+    """Per-IP rate limiter for document mutation endpoints.
+
+    Must be called AFTER demo-key validation so failed auth never
+    consumes mutation quota.
+    """
+    limit, window_seconds = _mutation_rate_limit_config()
+    now = time.monotonic()
+    identity = _client_ip(request)
+    with _mutation_rate_limit_lock:
+        # Prune expired buckets inline (same pattern as Groq limiter)
+        for _ip, _bucket in list(_mutation_rate_limit_buckets.items()):
+            if now >= float(_bucket["reset_at"]):
+                _mutation_rate_limit_buckets.pop(_ip, None)
+        bucket = _mutation_rate_limit_buckets.get(identity)
+        if not bucket:
+            _mutation_rate_limit_buckets[identity] = {"count": 1, "reset_at": now + window_seconds}
+            return
+        if int(bucket["count"]) >= limit:
+            retry_after = _retry_after_seconds(float(bucket["reset_at"]), now)
+            raise HTTPException(
+                status_code=429,
+                detail=MUTATION_RATE_LIMIT_DETAIL,
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket["count"] = int(bucket["count"]) + 1
+
+
+def _try_acquire_mutation_lock() -> bool:
+    """Non-blocking acquisition of the process-wide mutation lock.
+
+    Returns True if acquired, False if already held.
+    Caller is responsible for releasing via _mutation_lock.release().
+    """
+    return _mutation_lock.acquire(blocking=False)
+
+
+def _check_mutation_lock_or_raise() -> None:
+    """Raise 409 if a mutation is already running; otherwise acquire the lock.
+
+    The lock MUST be released in a finally block by the caller.
+    """
+    if not _try_acquire_mutation_lock():
+        raise HTTPException(
+            status_code=409,
+            detail=MUTATION_LOCK_DETAIL,
+        )
 
 
 def _normalize_demo_question(question: str) -> str:
@@ -533,33 +598,49 @@ def public_demo_chat(req: DemoChatRequest):
 @app.post("/api/upload")
 async def upload(request: Request, file: UploadFile = File(...)):
     _require_demo_key(request)
-    safe_name = _safe_upload_filename(file.filename or "")
-    suffix = PurePosixPath(safe_name).suffix.lower()
-    data = await _read_supported_upload(file, suffix)
-    dest = (DOCS_FOLDER / safe_name).resolve()
-    docs_root = DOCS_FOLDER.resolve()
-    # Defense-in-depth guard: stored uploads must remain inside docs/.
-    if docs_root not in [dest, *dest.parents]:
-        _upload_error(400, "Invalid upload destination.")
+    _enforce_mutation_rate_limit(request)
+    _acquired = _try_acquire_mutation_lock()
+    if not _acquired:
+        raise HTTPException(status_code=409, detail=MUTATION_LOCK_DETAIL)
     try:
-        with dest.open("wb") as f:
-            f.write(data)
-    except OSError:
-        _upload_error(500, "Could not save uploaded file.")
-    return {"filename": safe_name, "saved": True}
+        safe_name = _safe_upload_filename(file.filename or "")
+        suffix = PurePosixPath(safe_name).suffix.lower()
+        data = await _read_supported_upload(file, suffix)
+        dest = (DOCS_FOLDER / safe_name).resolve()
+        docs_root = DOCS_FOLDER.resolve()
+        # Defense-in-depth guard: stored uploads must remain inside docs/.
+        if docs_root not in [dest, *dest.parents]:
+            _upload_error(400, "Invalid upload destination.")
+        try:
+            with dest.open("wb") as f:
+                f.write(data)
+        except OSError:
+            _upload_error(500, "Could not save uploaded file.")
+        return {"filename": safe_name, "saved": True}
+    finally:
+        _mutation_lock.release()
 
 
 @app.post("/api/process")
 def process(request: Request):
     _require_demo_key(request)
-    docs = [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]
-    if not docs:
-        raise HTTPException(400, "No supported documents to process.")
+    _enforce_mutation_rate_limit(request)
+    _acquired = _try_acquire_mutation_lock()
+    if not _acquired:
+        raise HTTPException(status_code=409, detail=MUTATION_LOCK_DETAIL)
     try:
-        stats = ingest_documents()
-        return {"success": True, "stats": stats}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Document processing failed.")
+        docs = [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]
+        if not docs:
+            raise HTTPException(400, "No supported documents to process.")
+        try:
+            stats = ingest_documents()
+            return {"success": True, "stats": stats}
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=500, detail="Document processing failed.")
+    finally:
+        _mutation_lock.release()
 
 
 class FlashcardRequest(BaseModel):
@@ -684,32 +765,46 @@ def chat(req: ChatRequest, request: Request = None):
 def delete_doc(filename: str, request: Request = None):
     if request is not None:
         _require_demo_key(request)
-    target = _delete_doc_target(filename)
-    if not target.is_file():
-        raise HTTPException(404, "File not found.")
-    delete_document_from_index(filename)
-    target.unlink()
-    return {"deleted": filename}
+        _enforce_mutation_rate_limit(request)
+    _acquired = _try_acquire_mutation_lock()
+    if not _acquired:
+        raise HTTPException(status_code=409, detail=MUTATION_LOCK_DETAIL)
+    try:
+        target = _delete_doc_target(filename)
+        if not target.is_file():
+            raise HTTPException(404, "File not found.")
+        delete_document_from_index(filename)
+        target.unlink()
+        return {"deleted": filename}
+    finally:
+        _mutation_lock.release()
 
 
 @app.delete("/api/library")
 def clear_library(request: Request):
     _require_demo_key(request)
-    gc.collect()
-    for path in (CHROMA_PATH, STATS_FILE):
-        try:
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.is_file():
-                path.unlink(missing_ok=True)
-        except Exception:
-            continue
-    for pdf in [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]:
-        try:
-            pdf.unlink(missing_ok=True)
-        except Exception:
-            pass
-    return {"cleared": True}
+    _enforce_mutation_rate_limit(request)
+    _acquired = _try_acquire_mutation_lock()
+    if not _acquired:
+        raise HTTPException(status_code=409, detail=MUTATION_LOCK_DETAIL)
+    try:
+        gc.collect()
+        for path in (CHROMA_PATH, STATS_FILE):
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                elif path.is_file():
+                    path.unlink(missing_ok=True)
+            except Exception:
+                continue
+        for pdf in [path for path in DOCS_FOLDER.iterdir() if is_supported_document(path)]:
+            try:
+                pdf.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return {"cleared": True}
+    finally:
+        _mutation_lock.release()
 
 BUSINESS_NO_CONTEXT_RESPONSE = {
     "result": {
