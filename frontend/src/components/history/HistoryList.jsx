@@ -29,7 +29,7 @@ export default function HistoryList({
               onClick={() => onLoadChat(chat)}
               style={{
                 background: chat.id === loadedChatId ? 'var(--surface-2)' : 'var(--bg)',
-                borderColor: chat.id === loadedChatId ? 'var(--gold-dim)' : 'var(--border)'
+                borderColor: chat.id === loadedChatId ? 'var(--primary)' : 'var(--border)'
               }}
             >
               <div className="history-info">

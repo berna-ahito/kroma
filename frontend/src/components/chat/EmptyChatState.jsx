@@ -15,7 +15,7 @@ export default function EmptyChatState() {
         </div>
         <div className="step">
           <span className="step-num">2</span>
-          <span>Click <strong style={{ color: 'var(--gold)' }}>Process Documents</strong> to prepare your files</span>
+          <span>Click <strong style={{ color: 'var(--primary-hover)' }}>Process Documents</strong> to prepare your files</span>
         </div>
         <div className="step">
           <span className="step-num">3</span>

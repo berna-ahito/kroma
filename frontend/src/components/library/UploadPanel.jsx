@@ -30,8 +30,8 @@ export default function UploadPanel({
         <span className="upload-title">{uploading ? 'Uploading...' : 'Click or drag to upload'}</span>
         <span className="upload-hint">{uploading ? 'Please wait...' : 'PDF, TXT, Markdown · 25MB max'}</span>
       </label>
-      {uploadError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadError}</div>}
-      {uploadMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadMessage}</div>}
+      {uploadError && <div style={{ color: 'var(--danger-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadError}</div>}
+      {uploadMessage && <div style={{ color: 'var(--warning-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{uploadMessage}</div>}
 
       <button
         className="btn-primary"
@@ -42,8 +42,8 @@ export default function UploadPanel({
       >
         {processing ? 'Processing...' : 'Process Documents'}
       </button>
-      {processError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processError}</div>}
-      {processMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processMessage}</div>}
+      {processError && <div style={{ color: 'var(--danger-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processError}</div>}
+      {processMessage && <div style={{ color: 'var(--warning-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{processMessage}</div>}
     </>
   )
 }

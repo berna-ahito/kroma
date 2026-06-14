@@ -715,10 +715,10 @@ export default function App() {
                     role="alert"
                     aria-live="assertive"
                     style={{
-                      background: 'rgba(127,29,29,0.25)',
-                      border: '1px solid #7f1d1d',
+                      background: 'var(--danger-soft)',
+                      border: '1px solid var(--danger-border)',
                       borderRadius: '10px',
-                      color: '#fca5a5',
+                      color: 'var(--danger-text)',
                       padding: '0.75rem 1rem',
                       fontSize: '0.9rem',
                       lineHeight: 1.5,

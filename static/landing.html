@@ -4,28 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kroma — Ask. Learn. Know.</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='6' fill='%23eab308'/%3E%3Ctext x='16' y='23' font-family='Outfit,sans-serif' font-size='18' font-weight='800' text-anchor='middle' fill='%231a1200'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect x='6' y='6' width='84' height='84' rx='22' fill='%2311171B' stroke='%232DD4BF' stroke-width='4'/%3E%3Cpath d='M27 26h14v44H27z' fill='%232DD4BF'/%3E%3Cpath d='M42 49 63 26h17L53 55z' fill='%236B9EFF'/%3E%3Cpath d='M43 51 63 70h17L53 44z' fill='%230F766E'/%3E%3Cpath d='M49 50 61 62 52 65 42 54z' fill='%23C8A24A'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
-    --bg: #0f0e0c;
-    --bg2: #1c1917;
-    --surface: #292524;
-    --surface2: #3c3330;
-    --gold: #eab308;
-    --gold-dim: #a16207;
-    --gold-soft: #451a03;
-    --cream: #fef3c7;
-    --text: #fafaf9;
-    --text2: #d6d3d1;
-    --text3: #78716c;
-    --border: #3c3330;
+    --bg: #0D1114;
+    --bg2: #11171B;
+    --surface: #161D22;
+    --surface2: #20292F;
+    --surface3: #263238;
+    --gold: #C8A24A;
+    --gold-dim: #D6B45F;
+    --gold-soft: rgba(200,162,74,0.16);
+    --primary: #6B9EFF;
+    --primary-hover: #85B2FF;
+    --primary-soft: rgba(107,158,255,0.14);
+    --evidence: #0F766E;
+    --evidence-bright: #2DD4BF;
+    --evidence-soft: rgba(15,118,110,0.18);
+    --cream: #F7F3EA;
+    --text: #F7F3EA;
+    --text2: #B8C2C8;
+    --text3: #93A1AA;
+    --border: #34434B;
+    --on-accent: #08111F;
+    --success: #22C55E;
+    --warning: #D99A2B;
+    --danger: #EF4444;
   }
 
   html { scroll-behavior: smooth; }
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid #7DD3FC;
+    outline-offset: 3px;
+  }
 
   body {
     font-family: 'Outfit', sans-serif;
@@ -54,9 +71,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(15,14,12,0.85);
+    background: rgba(13,17,20,0.88);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(60,51,48,0.5);
+    border-bottom: 1px solid rgba(52,67,75,0.55);
   }
 
   .nav-logo {
@@ -76,7 +93,7 @@
     justify-content: center;
     font-weight: 800;
     font-size: 1rem;
-    color: var(--bg);
+    color: var(--on-accent);
   }
 
   .nav-name {
@@ -104,8 +121,8 @@
   .nav-links a:hover { color: var(--text); }
 
   .nav-cta {
-    background: var(--gold);
-    color: var(--bg) !important;
+    background: var(--primary);
+    color: var(--on-accent) !important;
     padding: 0.5rem 1.25rem;
     border-radius: 8px;
     font-weight: 700 !important;
@@ -113,7 +130,7 @@
     transition: background 0.15s !important;
   }
 
-  .nav-cta:hover { background: #f59e0b !important; color: var(--bg) !important; }
+  .nav-cta:hover { background: var(--primary-hover) !important; color: var(--on-accent) !important; }
 
   /* TOP LINE */
   .top-line {
@@ -150,7 +167,7 @@
     transform: translateX(-50%);
     width: 600px;
     height: 600px;
-    background: radial-gradient(circle, rgba(234,179,8,0.06) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(45,212,191,0.06) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -164,7 +181,7 @@
     padding: 0.4rem 1rem;
     font-size: 0.85rem;
     font-family: 'DM Mono', monospace;
-    color: var(--gold);
+    color: var(--evidence-bright);
     letter-spacing: 0.05em;
     margin-bottom: 2rem;
     animation: fadeUp 0.6s ease both;
@@ -174,7 +191,7 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--gold);
+    background: var(--evidence-bright);
     animation: pulse-dot 2s infinite;
   }
 
@@ -195,7 +212,7 @@
   }
 
   .hero-title span {
-    color: var(--gold);
+    color: var(--evidence-bright);
     font-style: italic;
   }
 
@@ -217,8 +234,8 @@
   }
 
   .btn-hero {
-    background: var(--gold);
-    color: var(--bg);
+    background: var(--primary);
+    color: var(--on-accent);
     border: none;
     border-radius: 10px;
     padding: 0.85rem 2rem;
@@ -231,7 +248,7 @@
     display: inline-block;
   }
 
-  .btn-hero:hover { background: #f59e0b; transform: translateY(-1px); }
+  .btn-hero:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
   .btn-ghost {
     background: transparent;
@@ -290,12 +307,12 @@
   .preview-frame {
     width: 100%;
     background: var(--bg2);
-    border: 1px solid rgba(234,179,8,0.2);
+    border: 1px solid rgba(45,212,191,0.24);
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 
       -30px 30px 80px rgba(0,0,0,0.7),
-      -10px 10px 30px rgba(234,179,8,0.06),
+      -10px 10px 30px rgba(45,212,191,0.06),
       inset 0 1px 0 rgba(255,255,255,0.07);
     transform: rotateY(-15deg) rotateX(5deg) translateY(-10px);
     transition: transform 0.5s ease, box-shadow 0.5s ease;
@@ -306,7 +323,7 @@
     transform: rotateY(-5deg) rotateX(2deg) translateY(-14px);
     box-shadow: 
       -15px 40px 80px rgba(0,0,0,0.5),
-      0 0 0 1px rgba(234,179,8,0.25);
+      0 0 0 1px rgba(45,212,191,0.30);
     animation-play-state: paused;
   }
 
@@ -376,7 +393,7 @@
   .preview-metric-val {
     font-size: 1.5rem;
     font-weight: 700;
-    color: var(--gold);
+    color: var(--evidence-bright);
     margin-top: 0.2rem;
   }
 
@@ -396,8 +413,8 @@
 
   .preview-msg.user {
     align-self: flex-end;
-    background: #1c1200;
-    border: 1px solid var(--gold-soft);
+    background: var(--primary-soft);
+    border: 1px solid var(--primary);
     color: var(--cream);
   }
 
@@ -427,7 +444,7 @@
     font-family: 'DM Mono', monospace;
     font-size: 0.95rem;
     letter-spacing: 0.2em;
-    color: var(--gold);
+    color: var(--evidence-bright);
     text-transform: uppercase;
     margin-bottom: 1rem;
   }
@@ -472,7 +489,7 @@
     height: 28px;
     margin-bottom: 1rem;
     display: block;
-    color: var(--gold);
+    color: var(--evidence-bright);
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
@@ -527,13 +544,13 @@
     transition: border-color 0.15s, color 0.15s;
   }
 
-  .stack-pill:hover { border-color: var(--gold-dim); color: var(--text); }
+  .stack-pill:hover { border-color: var(--evidence); color: var(--text); }
 
   .stack-pill-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--gold);
+    background: var(--evidence-bright);
     flex-shrink: 0;
   }
 
@@ -565,7 +582,7 @@
     justify-content: center;
     font-size: 1.5rem;
     font-weight: 800;
-    color: var(--bg);
+    color: var(--on-accent);
     margin-bottom: 1.5rem;
   }
 
@@ -661,19 +678,48 @@
 
 <nav>
   <a href="#" class="nav-logo">
-    <svg width="200" height="60" viewBox="140 55 400 120" role="img">
-      <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" stroke-width="2"/>
-      <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" stroke-width="1"/>
-      <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" stroke-width="1"/>
-      <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
-      <path d="M195 109 L209 94" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
-      <path d="M195 109 L211 126" stroke="#eab308" stroke-width="7" stroke-linecap="round" fill="none"/>
-      <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
-      <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-      <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
-      <text x="262" y="122" font-family="'Outfit', sans-serif" font-size="58" font-weight="800" fill="#fafaf9" letter-spacing="-2">Kroma</text>
-      <circle cx="270" cy="72" r="5" fill="#eab308"/>
-      <text x="265" y="152" font-family="'DM Mono', monospace" font-size="20" font-weight="500" fill="#eab308" letter-spacing="4">ASK. LEARN. KNOW.</text>
+    <svg width="200" height="60" viewBox="0 0 420 120" role="img" aria-labelledby="landing-logo-title landing-logo-desc">
+      <title id="landing-logo-title">Kroma</title>
+      <desc id="landing-logo-desc">Kroma logo with a rounded-square geometric K mark and the ASK. LEARN. KNOW. tagline.</desc>
+      <defs>
+        <linearGradient id="landing-mark-stroke" x1="8" y1="16" x2="92" y2="96" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#2DD4BF"/>
+          <stop offset="0.58" stop-color="#6B9EFF"/>
+          <stop offset="1" stop-color="#C8A24A"/>
+        </linearGradient>
+        <linearGradient id="landing-stem" x1="32" y1="26" x2="32" y2="78" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#2DD4BF"/>
+          <stop offset="1" stop-color="#0F766E"/>
+        </linearGradient>
+        <linearGradient id="landing-arm-top" x1="44" y1="28" x2="80" y2="52" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#2DD4BF"/>
+          <stop offset="1" stop-color="#6B9EFF"/>
+        </linearGradient>
+        <linearGradient id="landing-arm-bottom" x1="44" y1="50" x2="80" y2="78" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#0F766E"/>
+          <stop offset="1" stop-color="#6B9EFF"/>
+        </linearGradient>
+        <linearGradient id="landing-brass" x1="44" y1="49" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#D6B45F"/>
+          <stop offset="1" stop-color="#C8A24A"/>
+        </linearGradient>
+        <filter id="landing-soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#01060A" flood-opacity="0.32"/>
+        </filter>
+      </defs>
+
+      <g filter="url(#landing-soft-shadow)">
+        <rect x="8" y="14" width="92" height="92" rx="24" fill="#11171B" stroke="url(#landing-mark-stroke)" stroke-width="3.5"/>
+        <rect x="15" y="21" width="78" height="78" rx="19" fill="none" stroke="#34434B" stroke-width="1" opacity="0.55"/>
+        <rect x="30" y="30" width="14" height="56" rx="2.5" fill="url(#landing-stem)"/>
+        <path d="M44 58L72 30H88L55 64L44 58Z" fill="url(#landing-arm-top)"/>
+        <path d="M44 62L56 50L88 86H71L44 62Z" fill="url(#landing-arm-bottom)"/>
+        <path d="M50 58L63 70L52 73L42 62L50 58Z" fill="url(#landing-brass)"/>
+      </g>
+
+      <text x="124" y="60" font-family="Outfit, Inter, Arial, sans-serif" font-size="50" font-weight="800" fill="#F7F3EA" letter-spacing="-1.4">Kroma</text>
+      <text x="126" y="88" font-family="'DM Mono', Consolas, monospace" font-size="13" font-weight="500" fill="#B8C2C8" letter-spacing="4">ASK. LEARN. KNOW.</text>
+      <circle cx="397" cy="45" r="3.5" fill="#C8A24A"/>
     </svg>
   </a>
   <ul class="nav-links">
@@ -717,9 +763,9 @@
   <div class="hero-right">
     <div class="preview-frame">
       <div class="preview-bar">
-        <div class="preview-dot" style="background:#ef4444"></div>
-        <div class="preview-dot" style="background:#f59e0b"></div>
-        <div class="preview-dot" style="background:#22c55e"></div>
+        <div class="preview-dot" style="background:#EF4444"></div>
+        <div class="preview-dot" style="background:#D99A2B"></div>
+        <div class="preview-dot" style="background:#22C55E"></div>
         <div class="preview-url">Kroma workspace</div>
       </div>
       <div class="preview-screen">
@@ -864,8 +910,8 @@
     <span>Kroma</span> · ASK. LEARN. KNOW. · Built with Python + Groq
   </div>
   <div class="footer-right" style="display:flex;gap:1rem;align-items:center;">
-    <a href="https://github.com/berna-ahito" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#eab308'" onmouseout="this.style.color='#78716c'">GitHub</a>
-    <a href="https://www.linkedin.com/in/bernadeth-ahito/" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#eab308'" onmouseout="this.style.color='#78716c'">LinkedIn</a>
+    <a href="https://github.com/berna-ahito" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#C8A24A'" onmouseout="this.style.color='#93A1AA'">GitHub</a>
+    <a href="https://www.linkedin.com/in/bernadeth-ahito/" target="_blank" style="color:var(--text3);text-decoration:none;font-size:0.78rem;" onmouseover="this.style.color='#C8A24A'" onmouseout="this.style.color='#93A1AA'">LinkedIn</a>
     <span style="color:var(--text3);">Claire Ahito · CIT-U Cebu · 2026</span>
   </div>
 </footer>

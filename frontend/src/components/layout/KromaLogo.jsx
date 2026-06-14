@@ -1,19 +1,48 @@
 export default function KromaLogo() {
   return (
     <a href="/" className="logo" style={{ textDecoration: 'none', padding: '0.25rem 0' }}>
-      <svg width="100%" height="80" viewBox="140 55 400 120" role="img">
-        <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#eab308" strokeWidth="2"/>
-        <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#3c3330" strokeWidth="1"/>
-        <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#3c3330" strokeWidth="1"/>
-        <rect x="188" y="92" width="7" height="34" rx="2" fill="#eab308"/>
-        <path d="M195 109 L209 94" stroke="#eab308" strokeWidth="7" strokeLinecap="round" fill="none"/>
-        <path d="M195 109 L211 126" stroke="#eab308" strokeWidth="7" strokeLinecap="round" fill="none"/>
-        <line x1="188" y1="132" x2="205" y2="132" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.8"/>
-        <line x1="188" y1="137" x2="217" y2="137" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.5"/>
-        <line x1="188" y1="142" x2="211" y2="142" stroke="#eab308" strokeWidth="2" strokeLinecap="round" opacity="0.3"/>
-        <text x="262" y="122" fontFamily="'Outfit', sans-serif" fontSize="58" fontWeight="800" fill="#fafaf9" letterSpacing="-2">Kroma</text>
-        <circle cx="270" cy="72" r="5" fill="#eab308"/>
-        <text x="265" y="152" fontFamily="'DM Mono', monospace" fontSize="13" fontWeight="500" fill="#eab308" letterSpacing="4">ASK. LEARN. KNOW.</text>
+      <svg width="100%" height="80" viewBox="0 0 420 120" role="img" aria-labelledby="kroma-logo-title kroma-logo-desc">
+        <title id="kroma-logo-title">Kroma</title>
+        <desc id="kroma-logo-desc">Kroma logo with a rounded-square geometric K mark and the ASK. LEARN. KNOW. tagline.</desc>
+        <defs>
+          <linearGradient id="kroma-react-mark-stroke" x1="8" y1="16" x2="92" y2="96" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#2DD4BF" />
+            <stop offset="0.58" stopColor="#6B9EFF" />
+            <stop offset="1" stopColor="#C8A24A" />
+          </linearGradient>
+          <linearGradient id="kroma-react-stem" x1="32" y1="26" x2="32" y2="78" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#2DD4BF" />
+            <stop offset="1" stopColor="#0F766E" />
+          </linearGradient>
+          <linearGradient id="kroma-react-arm-top" x1="44" y1="28" x2="80" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#2DD4BF" />
+            <stop offset="1" stopColor="#6B9EFF" />
+          </linearGradient>
+          <linearGradient id="kroma-react-arm-bottom" x1="44" y1="50" x2="80" y2="78" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#0F766E" />
+            <stop offset="1" stopColor="#6B9EFF" />
+          </linearGradient>
+          <linearGradient id="kroma-react-brass" x1="44" y1="49" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#D6B45F" />
+            <stop offset="1" stopColor="#C8A24A" />
+          </linearGradient>
+          <filter id="kroma-react-soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#01060A" floodOpacity="0.32" />
+          </filter>
+        </defs>
+
+        <g filter="url(#kroma-react-soft-shadow)">
+          <rect x="8" y="14" width="92" height="92" rx="24" fill="#11171B" stroke="url(#kroma-react-mark-stroke)" strokeWidth="3.5" />
+          <rect x="15" y="21" width="78" height="78" rx="19" fill="none" stroke="#34434B" strokeWidth="1" opacity="0.55" />
+          <rect x="30" y="30" width="14" height="56" rx="2.5" fill="url(#kroma-react-stem)" />
+          <path d="M44 58L72 30H88L55 64L44 58Z" fill="url(#kroma-react-arm-top)" />
+          <path d="M44 62L56 50L88 86H71L44 62Z" fill="url(#kroma-react-arm-bottom)" />
+          <path d="M50 58L63 70L52 73L42 62L50 58Z" fill="url(#kroma-react-brass)" />
+        </g>
+
+        <text x="124" y="60" fontFamily="Outfit, Inter, Arial, sans-serif" fontSize="50" fontWeight="800" fill="#F7F3EA" letterSpacing="-1.4">Kroma</text>
+        <text x="126" y="88" fontFamily="'DM Mono', Consolas, monospace" fontSize="13" fontWeight="500" fill="#B8C2C8" letterSpacing="4">ASK. LEARN. KNOW.</text>
+        <circle cx="397" cy="45" r="3.5" fill="#C8A24A" />
       </svg>
     </a>
   )

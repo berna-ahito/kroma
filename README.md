@@ -2,9 +2,9 @@
 
 <img src="assets/kroma-logo.svg" alt="Kroma" width="340">
 
-### Document intelligence for study, research, and knowledge work.
+### Ask your documents questions. Get answers with sources.
 
-Kroma turns your PDF, TXT, and Markdown files into answers, summaries, flashcards, quizzes, and audit reports — with visible source context so you can check where each answer came from.
+Kroma turns PDF, TXT, and Markdown files into answers, summaries, flashcards, quizzes, and document audits. It shows the source context behind answers so you can check where the information came from.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
@@ -13,7 +13,7 @@ Kroma turns your PDF, TXT, and Markdown files into answers, summaries, flashcard
 ![Groq](https://img.shields.io/badge/Groq-LLM%20inference-F55036)
 ![Status](https://img.shields.io/badge/status-active%20build-2563EB)
 
-**Built by:** [Claire Ahito](https://github.com/berna-ahito) · CIT-U Cebu · 2026
+**Built by:** [Claire Ahito](https://github.com/berna-ahito) · 2026
 
 [Live Demo](https://kroma-knyd.onrender.com) · [Features](#features) · [Architecture](#architecture) · [Run Locally](#run-locally)
 
@@ -29,13 +29,13 @@ The public demo includes a bundled sample document you can query immediately. Cu
 
 > **Note:** Hosted on Render Free. First request after inactivity may take a few seconds due to a cold start. Uploaded files and indexes are ephemeral — not persisted between restarts.
 
-## Overview
+## What is Kroma?
 
-Many AI tools answer your questions but give you no way to check their work. Kroma pairs every answer with the source passages it came from, so you can read the evidence, judge the relevance, and decide how much to trust it.
+Kroma is a document intelligence app for working with your own files. Upload notes, readings, research files, briefs, or Markdown documents, then ask questions in plain language.
 
-Upload your own notes, research briefs, PDFs, or Markdown files. Then ask questions, run Knowledge Copilot tasks, generate study materials, or audit what your document library does and does not cover.
+You can use Kroma to summarize key points, make study materials, generate flashcards and quizzes, or run an audit that shows what your document library does and does not cover.
 
-Under the hood, retrieval combines semantic vector search with keyword matching via reciprocal rank fusion (RRF). Request-scoped traces provide internal observability without exposing raw retrieval data to the UI.
+Kroma focuses on inspectable, source-backed answers. Instead of hiding the evidence, it shows source cards and context so you can review the passages behind an answer.
 
 Supported uploads: **PDF, TXT, Markdown (`.md`, `.markdown`)** — UTF-8 or UTF-8-SIG encoded.
 
@@ -47,14 +47,14 @@ Supported uploads: **PDF, TXT, Markdown (`.md`, `.markdown`)** — UTF-8 or UTF-
 
 ## Features
 
-| Area | What it does |
+| Feature | What it does |
 |---|---|
-| Document chat | Ask questions across your uploaded files. Answers include source cards with document location, a passage preview, and a relevance score. |
-| Study tools | Generate flashcards, quizzes, summaries, and suggestions from your sources. Export to PDF from the browser. |
-| Knowledge Copilot | Draft replies, summarize for a team, extract action items, or run a risk check — all grounded in your uploaded documents. |
-| Knowledge Audit | Review coverage gaps, missing knowledge areas, risk zones, next document suggestions, and AI-readiness scoring for your library. |
-| Trust controls | No-context refusals when evidence is absent, sanitized source IDs, flagging of sensitive or external outputs, and deterministic behavioral evals. |
-| Demo protection | Custom uploads and LLM-backed actions are gated by `KROMA_DEMO_KEY`. The bundled sample document and suggested questions remain public. |
+| Ask your documents | Upload your own files and ask questions across them. Kroma answers using retrieved context from your document library. |
+| Check the source | Source cards show document location, passage previews, and relevance scores so you can inspect the evidence behind an answer. |
+| Make study materials | Generate summaries, flashcards, quizzes, and study suggestions from your uploaded sources. Export study output to PDF from the browser. |
+| Use Knowledge Copilot | Draft replies, summarize for a team, extract action items, or run a risk check with outputs grounded in your documents. |
+| Run a Knowledge Audit | Review coverage gaps, missing knowledge areas, risk zones, next document suggestions, and AI-readiness scoring for your library. |
+| Safer demo mode | Custom uploads and LLM-backed actions can be gated by `KROMA_DEMO_KEY`; the bundled sample document and suggested questions remain public. |
 
 ## Architecture
 
@@ -204,9 +204,9 @@ When `KROMA_DEMO_KEY` is set, uploads, processing, deletion, library clearing, u
 
 ## Product direction
 
-Kroma is a document-intelligence app built around a simple idea: AI responses from your own documents should be easy to inspect, not just fast to generate.
+Kroma is built around a simple idea: AI answers from your own documents should be easy to inspect.
 
-The current version handles document chat, study tools, knowledge workflows, and coverage audits — with retrieval traces and behavioral evals built in from the start. The roadmap focuses on making Kroma more useful for real teams: persistent document libraries, richer audit reports, shareable knowledge bases, and integrations with tools that organizations already use.
+The current version supports document chat, study tools, knowledge workflows, and coverage audits. The roadmap focuses on making Kroma more useful for real teams: persistent document libraries, richer audit reports, shareable knowledge bases, and integrations with tools that organizations already use.
 
 ## Contact
 
