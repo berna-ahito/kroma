@@ -1,16 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="156" viewBox="140 55 400 120" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120" role="img" aria-labelledby="title desc">
   <title id="title">Kroma</title>
-  <desc id="desc">Kroma logo with a dark document mark, gold K symbol, and ASK. LEARN. KNOW. tagline.</desc>
-  <rect x="155" y="60" width="90" height="90" rx="20" fill="#1c1917" stroke="#facc15" stroke-width="2"/>
-  <path d="M175 78 L223 78 L237 92 L237 138 L175 138 Z" fill="#292524" stroke="#57534e" stroke-width="1"/>
-  <path d="M223 78 L223 92 L237 92 Z" fill="#1c1917" stroke="#57534e" stroke-width="1"/>
-  <rect x="188" y="92" width="7" height="34" rx="2" fill="#facc15"/>
-  <path d="M195 109 L209 94" stroke="#facc15" stroke-width="7" stroke-linecap="round" fill="none"/>
-  <path d="M195 109 L211 126" stroke="#facc15" stroke-width="7" stroke-linecap="round" fill="none"/>
-  <line x1="188" y1="132" x2="205" y2="132" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
-  <line x1="188" y1="137" x2="217" y2="137" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-  <line x1="188" y1="142" x2="211" y2="142" stroke="#facc15" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
-  <text x="262" y="122" font-family="Outfit, Inter, Arial, sans-serif" font-size="58" font-weight="800" fill="#fbbf24" stroke="#78350f" stroke-width="1.2" paint-order="stroke">Kroma</text>
-  <circle cx="270" cy="72" r="5" fill="#facc15"/>
-  <text x="265" y="152" font-family="'DM Mono', Consolas, monospace" font-size="13" font-weight="500" fill="#facc15" stroke="#78350f" stroke-width="0.45" paint-order="stroke" letter-spacing="4">ASK. LEARN. KNOW.</text>
+  <desc id="desc">Kroma logo with a rounded-square geometric K mark and the ASK. LEARN. KNOW. tagline.</desc>
+  <defs>
+    <linearGradient id="kroma-mark-stroke" x1="8" y1="16" x2="92" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="0.58" stop-color="#6B9EFF"/>
+      <stop offset="1" stop-color="#C8A24A"/>
+    </linearGradient>
+    <linearGradient id="kroma-stem" x1="32" y1="26" x2="32" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#0F766E"/>
+    </linearGradient>
+    <linearGradient id="kroma-arm-top" x1="44" y1="28" x2="80" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#6B9EFF"/>
+    </linearGradient>
+    <linearGradient id="kroma-arm-bottom" x1="44" y1="50" x2="80" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#6B9EFF"/>
+    </linearGradient>
+    <linearGradient id="kroma-brass" x1="44" y1="49" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D6B45F"/>
+      <stop offset="1" stop-color="#C8A24A"/>
+    </linearGradient>
+    <filter id="kroma-soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#01060A" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#kroma-soft-shadow)">
+    <rect x="8" y="14" width="92" height="92" rx="24" fill="#11171B" stroke="url(#kroma-mark-stroke)" stroke-width="3.5"/>
+    <rect x="15" y="21" width="78" height="78" rx="19" fill="none" stroke="#34434B" stroke-width="1" opacity="0.55"/>
+    <rect x="30" y="30" width="14" height="56" rx="2.5" fill="url(#kroma-stem)"/>
+    <path d="M44 58L72 30H88L55 64L44 58Z" fill="url(#kroma-arm-top)"/>
+    <path d="M44 62L56 50L88 86H71L44 62Z" fill="url(#kroma-arm-bottom)"/>
+    <path d="M50 58L63 70L52 73L42 62L50 58Z" fill="url(#kroma-brass)"/>
+  </g>
+
+  <text x="124" y="60" font-family="Outfit, Inter, Arial, sans-serif" font-size="50" font-weight="800" fill="#F7F3EA" letter-spacing="-1.4">Kroma</text>
+  <text x="126" y="88" font-family="'DM Mono', Consolas, monospace" font-size="13" font-weight="500" fill="#B8C2C8" letter-spacing="4">ASK. LEARN. KNOW.</text>
+  <circle cx="397" cy="45" r="3.5" fill="#C8A24A"/>
 </svg>

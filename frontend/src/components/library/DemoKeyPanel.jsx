@@ -53,7 +53,7 @@ export default function DemoKeyPanel({
           Clear
         </button>
       </div>
-      {demoKeyMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{demoKeyMessage}</div>}
+      {demoKeyMessage && <div style={{ color: 'var(--warning-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{demoKeyMessage}</div>}
     </>
   )
 }

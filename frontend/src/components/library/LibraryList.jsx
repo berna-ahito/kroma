@@ -57,8 +57,8 @@ export default function LibraryList({
           ))
         )}
       </div>
-      {deleteError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteError}</div>}
-      {deleteMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteMessage}</div>}
+      {deleteError && <div style={{ color: 'var(--danger-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteError}</div>}
+      {deleteMessage && <div style={{ color: 'var(--warning-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{deleteMessage}</div>}
 
       <hr className="divider" />
 
@@ -72,8 +72,8 @@ export default function LibraryList({
         </button>
         {children}
       </div>
-      {clearError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
-      {clearMessage && <div style={{ color: '#fcd34d', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
+      {clearError && <div style={{ color: 'var(--danger-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearError}</div>}
+      {clearMessage && <div style={{ color: 'var(--warning-text)', fontSize: '0.85rem', marginTop: '0.4rem', wordBreak: 'break-word', padding: '0 0.2rem' }}>{clearMessage}</div>}
     </>
   )
 }
