@@ -208,8 +208,3 @@ Kroma is built around a simple idea: AI answers from your own documents should b
 
 The current version supports document chat, study tools, knowledge workflows, and coverage audits. The roadmap focuses on making Kroma more useful for real teams: persistent document libraries, richer audit reports, shareable knowledge bases, and integrations with tools that organizations already use.
 
-## Contact
-
-**GitHub:** [berna-ahito](https://github.com/berna-ahito)  
-**LinkedIn:** [bernadeth-ahito](https://www.linkedin.com/in/bernadeth-ahito/)  
-**Location:** Cebu, Philippines
