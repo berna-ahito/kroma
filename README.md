@@ -13,8 +13,6 @@ Kroma turns PDF, TXT, and Markdown files into answers, summaries, flashcards, qu
 ![Groq](https://img.shields.io/badge/Groq-LLM%20inference-F55036)
 ![Status](https://img.shields.io/badge/status-active%20build-2563EB)
 
-**Built by:** [Claire Ahito](https://github.com/berna-ahito) · 2026
-
 [Live Demo](https://kroma-knyd.onrender.com) · [Features](#features) · [Architecture](#architecture) · [Run Locally](#run-locally)
 
 </div>
